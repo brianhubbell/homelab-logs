@@ -1,0 +1,18 @@
+[Unit]
+Description=Homelab Agent - MQTT command/response agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homelab-agent
+Group=homelab-agent
+ExecStart=/usr/local/bin/homelab-agent
+EnvironmentFile=/etc/homelab-agent/env
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

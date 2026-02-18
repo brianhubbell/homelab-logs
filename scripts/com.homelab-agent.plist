@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.homelab-agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/homelab-agent</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MQTT_BROKER</key>
+        <string>192.168.1.100</string>
+        <key>ALLOWED_SERVICES</key>
+        <string>govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/homelab-agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/homelab-agent.log</string>
+</dict>
+</plist>

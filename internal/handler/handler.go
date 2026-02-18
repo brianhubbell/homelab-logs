@@ -2,13 +2,12 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 
+	goutils "github.com/brianhubbell/go-utils"
 	paho "github.com/eclipse/paho.mqtt.golang"
 
 	"homelab-agent/internal/executor"
-	"homelab-agent/internal/message"
 	"homelab-agent/internal/metrics"
 	"homelab-agent/internal/mqtt"
 )
@@ -20,17 +19,15 @@ type Handler struct {
 	client        *mqtt.Client
 	met           *metrics.Server
 	responseTopic string
-	debug         bool
 }
 
 // New creates a Handler.
-func New(exec *executor.Executor, client *mqtt.Client, met *metrics.Server, responseTopic string, debug bool) *Handler {
+func New(exec *executor.Executor, client *mqtt.Client, met *metrics.Server, responseTopic string) *Handler {
 	return &Handler{
 		exec:          exec,
 		client:        client,
 		met:           met,
 		responseTopic: responseTopic,
-		debug:         debug,
 	}
 }
 
@@ -40,20 +37,18 @@ func (h *Handler) HandleMessage(_ paho.Client, msg paho.Message) {
 
 	var req executor.Request
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
-		log.Printf("ERROR invalid command payload: %v", err)
+		goutils.Err("invalid command payload", "error", err)
 		h.met.IncFailed()
 		return
 	}
 
 	if req.ID == "" || req.Action == "" {
-		log.Printf("ERROR command missing id or action")
+		goutils.Err("command missing id or action")
 		h.met.IncFailed()
 		return
 	}
 
-	if h.debug {
-		log.Printf("DEBUG command id=%s action=%s args=%v", req.ID, req.Action, req.Args)
-	}
+	goutils.Debug("command received", "id", req.ID, "action", req.Action, "args", req.Args)
 
 	start := time.Now()
 	resp := h.exec.Execute(req)
@@ -65,18 +60,16 @@ func (h *Handler) HandleMessage(_ paho.Client, msg paho.Message) {
 		h.met.IncFailed()
 	}
 
-	envelope := message.NewMessage(resp, nil, "response")
+	envelope := goutils.NewMessage(resp, nil, "response")
 	payload, err := json.Marshal(envelope)
 	if err != nil {
-		log.Printf("ERROR marshal response: %v", err)
+		goutils.Err("marshal response", "error", err)
 		return
 	}
 
 	if err := h.client.Publish(h.responseTopic, payload); err != nil {
-		log.Printf("ERROR publish response: %v", err)
+		goutils.Err("publish response", "error", err)
 	}
 
-	if h.debug {
-		log.Printf("DEBUG response id=%s status=%s duration=%dms", resp.ID, resp.Status, resp.DurationMs)
-	}
+	goutils.Debug("response sent", "id", resp.ID, "status", resp.Status, "duration_ms", resp.DurationMs)
 }

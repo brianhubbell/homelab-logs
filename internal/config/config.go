@@ -5,17 +5,19 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	goutils "github.com/brianhubbell/go-utils"
 )
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	MQTTBroker           string
-	TopicPrefix          string
-	AllowedServices      []string
-	AllowedComposePaths  []string
-	MetricsPort          int
-	MetricsInterval      int
-	Debug                bool
+	MQTTBroker          string
+	TopicPrefix         string
+	AllowedServices     []string
+	AllowedComposePaths []string
+	MetricsPort         int
+	MetricsInterval     int
+	Debug               bool
 }
 
 // Load reads configuration from environment variables.
@@ -36,7 +38,7 @@ func Load() (*Config, error) {
 		AllowedServices: splitCSV(allowedRaw),
 		MetricsPort:     9110,
 		MetricsInterval: 60,
-		Debug:           strToBool(os.Getenv("DEBUG")),
+		Debug:           goutils.StrToBool(os.Getenv("DEBUG")),
 	}
 
 	if v := os.Getenv("ALLOWED_COMPOSE_PATHS"); v != "" {
@@ -78,9 +80,4 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
-}
-
-func strToBool(s string) bool {
-	lower := strings.ToLower(strings.TrimSpace(s))
-	return lower == "true" || lower == "1" || lower == "yes"
 }

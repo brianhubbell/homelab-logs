@@ -3,12 +3,12 @@ package metrics
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"sync/atomic"
 	"time"
 
+	goutils "github.com/brianhubbell/go-utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -114,9 +114,9 @@ func (s *Server) Start(port int) {
 	}
 
 	go func() {
-		log.Printf("metrics server listening on port %d", port)
+		goutils.Log("metrics server listening", "port", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("metrics server error: %v", err)
+			goutils.Err("metrics server error", "error", err)
 		}
 	}()
 }

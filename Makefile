@@ -1,7 +1,8 @@
-.PHONY: build build-linux-amd64 build-linux-arm64 build-linux-armv7 build-darwin-arm64 build-all test clean deploy deploy-gigantic
+.PHONY: build build-linux-amd64 build-linux-arm64 build-linux-armv7 build-darwin-arm64 build-all test clean \
+       deploy deploy-gigantic deploy-pipvs deploy-piforza
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -ldflags "-X homelab-agent/internal/message.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X main.Version=$(VERSION)"
 
 build:
 	go build $(LDFLAGS) -o build/bin/homelab-agent ./cmd/homelab-agent/
@@ -24,7 +25,15 @@ deploy-gigantic: build-linux-amd64
 	scp build/bin/homelab-agent-linux-amd64 gigantic:~/homelab-agent
 	ssh -t gigantic 'sudo systemctl stop homelab-agent; sudo cp ~/homelab-agent /usr/local/bin/homelab-agent && sudo systemctl start homelab-agent'
 
-deploy: deploy-gigantic
+deploy-pipvs: build-linux-armv7
+	scp build/bin/homelab-agent-linux-armv7 pipvs:~/homelab-agent
+	ssh -t pipvs 'sudo systemctl stop homelab-agent; sudo cp ~/homelab-agent /usr/local/bin/homelab-agent && sudo systemctl start homelab-agent'
+
+deploy-piforza: build-linux-armv7
+	scp build/bin/homelab-agent-linux-armv7 piforza:~/homelab-agent
+	ssh -t piforza 'sudo systemctl stop homelab-agent; sudo cp ~/homelab-agent /usr/local/bin/homelab-agent && sudo systemctl start homelab-agent'
+
+deploy: deploy-gigantic deploy-pipvs deploy-piforza
 
 test:
 	go test ./...

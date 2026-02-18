@@ -10,27 +10,36 @@ import (
 	"syscall"
 	"time"
 
+	goutils "github.com/brianhubbell/go-utils"
+
 	"homelab-agent/internal/config"
 	"homelab-agent/internal/executor"
 	"homelab-agent/internal/handler"
-	"homelab-agent/internal/message"
 	"homelab-agent/internal/metrics"
 	"homelab-agent/internal/mqtt"
 )
+
+// Version is injected at build time via ldflags.
+var Version string
 
 func main() {
 	platformMain()
 }
 
 func run() {
+	// Set app metadata for watermarks
+	os.Setenv("APP_NAME", "homelab-agent")
+	os.Setenv("APP_VERSION", Version)
+
 	// 1. Load config
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	log.Printf("CONFIG mqttBroker=%s topicPrefix=%s allowedServices=%v composePaths=%v debug=%v metricsInterval=%ds metricsPort=%d",
-		cfg.MQTTBroker, cfg.TopicPrefix, cfg.AllowedServices, cfg.AllowedComposePaths,
-		cfg.Debug, cfg.MetricsInterval, cfg.MetricsPort)
+	goutils.Log("config loaded",
+		"broker", cfg.MQTTBroker, "prefix", cfg.TopicPrefix,
+		"services", cfg.AllowedServices, "composePaths", cfg.AllowedComposePaths,
+		"metricsInterval", cfg.MetricsInterval, "metricsPort", cfg.MetricsPort)
 
 	// 2. Start metrics server
 	met := metrics.NewServer()
@@ -54,16 +63,16 @@ func run() {
 
 	// 5. Build node config for self-registration
 	nodeConfig := map[string]interface{}{
-		"hostname":         hostname,
-		"label":            hostname,
-		"type":             "agent",
-		"address":          hostname + ".lan",
-		"port":             cfg.MetricsPort,
-		"allowedServices":  cfg.AllowedServices,
+		"hostname":            hostname,
+		"label":               hostname,
+		"type":                "agent",
+		"address":             hostname + ".lan",
+		"port":                cfg.MetricsPort,
+		"allowedServices":     cfg.AllowedServices,
 		"allowedComposePaths": cfg.AllowedComposePaths,
-		"version":          message.Version,
+		"version":             Version,
 	}
-	configPayload, err := json.Marshal(message.NewMessage(nodeConfig, nil, "config"))
+	configPayload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
 	if err != nil {
 		log.Fatalf("marshal node config: %v", err)
 	}
@@ -75,19 +84,16 @@ func run() {
 	var h *handler.Handler
 	client, err := mqtt.NewClient(cfg.MQTTBroker, func(connected bool) {
 		met.SetMQTTConnected(connected)
-		if cfg.Debug {
-			log.Printf("DEBUG mqttConnected=%v", connected)
-		}
+		goutils.Debug("mqtt status", "connected", connected)
 	}, func(c *mqtt.Client) {
-		// On every (re)connect: publish config and re-subscribe
 		if err := c.PublishRetained(configTopic, configPayload); err != nil {
-			log.Printf("ERROR publishing node config: %v", err)
+			goutils.Err("publish node config", "error", err)
 		} else {
-			log.Printf("published node config to %s", configTopic)
+			goutils.Log("published node config", "topic", configTopic)
 		}
 		if h != nil {
 			if err := c.Subscribe(commandTopic, h.HandleMessage); err != nil {
-				log.Printf("ERROR subscribing to command topic: %v", err)
+				goutils.Err("subscribe command topic", "error", err)
 			}
 		}
 	})
@@ -96,7 +102,7 @@ func run() {
 	}
 
 	// 8. Create handler and subscribe to command topic
-	h = handler.New(exec, client, met, responseTopic, cfg.Debug)
+	h = handler.New(exec, client, met, responseTopic)
 	if err := client.Subscribe(commandTopic, h.HandleMessage); err != nil {
 		log.Fatalf("subscribe command topic: %v", err)
 	}
@@ -109,39 +115,35 @@ func run() {
 			for range ticker.C {
 				data, err := executor.SystemMetrics()
 				if err != nil {
-					if cfg.Debug {
-						log.Printf("DEBUG system metrics error: %v", err)
-					}
+					goutils.Debug("system metrics error", "error", err)
 					continue
 				}
-				envelope := message.NewMessage(data, nil, "metrics")
+				envelope := goutils.NewMessage(data, nil, "metrics")
 				payload, err := json.Marshal(envelope)
 				if err != nil {
 					continue
 				}
 				if err := client.Publish(metricsTopic, payload); err != nil {
-					if cfg.Debug {
-						log.Printf("DEBUG publish metrics error: %v", err)
-					}
+					goutils.Debug("publish metrics error", "error", err)
 				}
 			}
 		}()
 	}
 
-	log.Printf("homelab-agent ready on %s (listening on %s)", hostname, commandTopic)
+	goutils.Log("homelab-agent ready", "hostname", hostname, "commandTopic", commandTopic)
 
 	// 10. Signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	sig := <-sigCh
-	log.Printf("received %v, shutting down...", sig)
+	goutils.Log("shutting down", "signal", sig)
 	if err := client.PublishRetained(configTopic, []byte{}); err != nil {
-		log.Printf("ERROR clearing node config: %v", err)
+		goutils.Err("clearing node config", "error", err)
 	} else {
-		log.Printf("cleared node config from %s", configTopic)
+		goutils.Log("cleared node config", "topic", configTopic)
 	}
 	client.Disconnect()
-	log.Printf("goodbye")
+	goutils.Log("goodbye")
 	os.Exit(0)
 }

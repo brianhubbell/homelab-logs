@@ -2,10 +2,10 @@ package mqtt
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	goutils "github.com/brianhubbell/go-utils"
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -18,8 +18,6 @@ type Client struct {
 }
 
 // NewClient creates and connects an MQTT client to tcp://{broker}:1883.
-// Auto-reconnect is enabled. The onStatus callback fires on connection changes.
-// The onConnect callback fires on every (re)connect — use it to re-subscribe and republish retained messages.
 func NewClient(broker string, onStatus func(connected bool), onConnect func(*Client)) (*Client, error) {
 	c := &Client{
 		onStatus: onStatus,
@@ -33,18 +31,18 @@ func NewClient(broker string, onStatus func(connected bool), onConnect func(*Cli
 	opts.SetKeepAlive(30 * time.Second)
 
 	opts.SetOnConnectHandler(func(_ paho.Client) {
-		log.Printf("MQTT connected to %s", broker)
+		goutils.Log("MQTT connected", "broker", broker)
 		c.setConnected(true)
 		if onConnect != nil {
 			onConnect(c)
 		}
 	})
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
-		log.Printf("MQTT connection lost: %v", err)
+		goutils.Err("MQTT connection lost", "error", err)
 		c.setConnected(false)
 	})
 	opts.SetReconnectingHandler(func(_ paho.Client, _ *paho.ClientOptions) {
-		log.Printf("MQTT reconnecting to %s", broker)
+		goutils.Log("MQTT reconnecting", "broker", broker)
 	})
 
 	c.client = paho.NewClient(opts)
@@ -84,7 +82,7 @@ func (c *Client) Subscribe(topic string, handler paho.MessageHandler) error {
 	if err := token.Error(); err != nil {
 		return fmt.Errorf("subscribe %s: %w", topic, err)
 	}
-	log.Printf("subscribed to %s", topic)
+	goutils.Log("subscribed", "topic", topic)
 	return nil
 }
 

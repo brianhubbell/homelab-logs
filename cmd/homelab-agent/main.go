@@ -23,6 +23,10 @@ import (
 var Version string
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
 	platformMain()
 }
 
@@ -82,6 +86,15 @@ func run() {
 	exec := executor.New(cfg.AllowedServices, cfg.AllowedComposePaths)
 	exec.DeployEnabled = cfg.DeployEnabled
 	exec.DeployDir = cfg.DeployDir
+	exec.CurrentVersion = Version
+	exec.AutoUpdateRepo = cfg.AutoUpdateRepo
+
+	// Add service versions to node config
+	nodeConfig["serviceVersions"] = exec.ServiceVersions()
+	configPayload, err = json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
+	if err != nil {
+		log.Fatalf("marshal node config: %v", err)
+	}
 
 	// 7. Connect MQTT
 	var h *handler.Handler
@@ -107,6 +120,7 @@ func run() {
 	// 8. Wire whitelist change callback to re-publish node config
 	exec.OnWhitelistChange = func(services []string) {
 		nodeConfig["allowedServices"] = services
+		nodeConfig["serviceVersions"] = exec.ServiceVersions()
 		payload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
 		if err != nil {
 			goutils.Err("marshal updated node config", "error", err)
@@ -151,9 +165,27 @@ func run() {
 		}()
 	}
 
+	// 11. Start auto-update ticker
+	if cfg.AutoUpdateEnabled && cfg.AutoUpdateRepo != "" {
+		go func() {
+			ticker := time.NewTicker(time.Duration(cfg.AutoUpdateInterval) * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				goutils.Log("auto-update check starting")
+				result, err := exec.SelfUpdate()
+				if err != nil {
+					goutils.Err("auto-update failed", "error", err)
+					continue
+				}
+				goutils.Log("auto-update check complete", "result", result)
+			}
+		}()
+		goutils.Log("auto-update enabled", "repo", cfg.AutoUpdateRepo, "interval", cfg.AutoUpdateInterval)
+	}
+
 	goutils.Log("homelab-agent ready", "hostname", hostname, "commandTopic", commandTopic)
 
-	// 11. Signal handling for graceful shutdown
+	// 12. Signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 

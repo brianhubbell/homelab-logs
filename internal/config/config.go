@@ -20,6 +20,9 @@ type Config struct {
 	Debug               bool
 	DeployEnabled       bool
 	DeployDir           string
+	AutoUpdateEnabled   bool
+	AutoUpdateRepo      string
+	AutoUpdateInterval  int
 }
 
 // Load reads configuration from environment variables.
@@ -43,6 +46,9 @@ func Load() (*Config, error) {
 		Debug:           goutils.StrToBool(os.Getenv("DEBUG")),
 		DeployEnabled:   goutils.StrToBool(os.Getenv("DEPLOY_ENABLED")),
 		DeployDir:       envOrDefault("DEPLOY_DIR", "/opt/homelab-services"),
+		AutoUpdateEnabled:  goutils.StrToBool(os.Getenv("AUTO_UPDATE_ENABLED")),
+		AutoUpdateRepo:     os.Getenv("AUTO_UPDATE_REPO"),
+		AutoUpdateInterval: 3600,
 	}
 
 	if v := os.Getenv("ALLOWED_COMPOSE_PATHS"); v != "" {
@@ -63,6 +69,14 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid METRICS_INTERVAL_SECONDS %q: %w", v, err)
 		}
 		cfg.MetricsInterval = n
+	}
+
+	if v := os.Getenv("AUTO_UPDATE_INTERVAL"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid AUTO_UPDATE_INTERVAL %q: %w", v, err)
+		}
+		cfg.AutoUpdateInterval = n
 	}
 
 	return cfg, nil

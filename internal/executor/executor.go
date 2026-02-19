@@ -29,6 +29,8 @@ type Executor struct {
 	DeployEnabled       bool
 	DeployDir           string
 	OnWhitelistChange   func([]string)
+	CurrentVersion      string
+	AutoUpdateRepo      string
 }
 
 // New creates an Executor with the given allowed services and compose paths.
@@ -145,6 +147,21 @@ func (e *Executor) Execute(req Request) Response {
 		if e.OnWhitelistChange != nil {
 			e.OnWhitelistChange(e.AllowedServicesList())
 		}
+
+	case "agent.update":
+		if !e.DeployEnabled {
+			resp.Status = "error"
+			resp.Error = "deploy functionality is not enabled"
+			return resp
+		}
+		data, err := e.SelfUpdate()
+		if err != nil {
+			resp.Status = "error"
+			resp.Error = err.Error()
+			return resp
+		}
+		resp.Status = "ok"
+		resp.Data = data
 
 	case "system.metrics":
 		data, err := SystemMetrics()

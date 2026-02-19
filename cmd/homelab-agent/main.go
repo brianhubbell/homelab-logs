@@ -64,7 +64,7 @@ func run() {
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
 	commandTopic := fmt.Sprintf("control/%s/%s/command", cfg.TopicPrefix, hostname)
 	responseTopic := fmt.Sprintf("control/%s/%s/response", cfg.TopicPrefix, hostname)
-	metricsTopic := fmt.Sprintf("observability/%s/%s/metrics", cfg.TopicPrefix, hostname)
+	metricsTopic := fmt.Sprintf("observability/homelab-agent/%s/metrics", hostname)
 
 	// 5. Build node config for self-registration
 	nodeConfig := map[string]interface{}{

@@ -5,15 +5,29 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"runtime"
 	"sync/atomic"
 	"time"
 
 	goutils "github.com/brianhubbell/go-utils"
 )
 
+// HealthInfo holds static attributes exposed by the health endpoint.
+type HealthInfo struct {
+	Version  string `json:"-"`
+	Hostname string `json:"-"`
+
+	AutoUpdateEnabled  bool   `json:"auto_update_enabled"`
+	AutoUpdateRepo     string `json:"auto_update_repo,omitempty"`
+	AutoUpdateInterval int    `json:"auto_update_interval"`
+	DeployEnabled      bool   `json:"deploy_enabled"`
+	DeployDir          string `json:"deploy_dir"`
+}
+
 // Server exposes a health check on /health and tracks operational metrics.
 type Server struct {
 	startTime time.Time
+	Info      HealthInfo
 
 	mqttConnected atomic.Bool
 	commandsRecv  atomic.Int64
@@ -80,22 +94,29 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	health := struct {
-		Status        string `json:"status"`
-		MQTTConnected bool   `json:"mqtt_connected"`
-		UptimeSeconds int64  `json:"uptime_seconds"`
-		Commands      struct {
-			Received int64 `json:"received"`
-			Executed int64 `json:"executed"`
-			Failed   int64 `json:"failed"`
-		} `json:"commands"`
+		Status        int        `json:"status"`
+		Version       string     `json:"version"`
+		Hostname      string     `json:"hostname"`
+		OS            string     `json:"os"`
+		Arch          string     `json:"arch"`
+		GoVersion     string     `json:"go_version"`
+		MQTTConnected bool       `json:"mqtt_connected"`
+		UptimeSeconds int64      `json:"uptime_seconds"`
+		NumGoroutine  int        `json:"num_goroutine"`
+		Config        HealthInfo `json:"config"`
 	}{
-		Status:        "ok",
+		Status:        http.StatusOK,
+		Version:       s.Info.Version,
+		Hostname:      s.Info.Hostname,
+		OS:            runtime.GOOS,
+		Arch:          runtime.GOARCH,
+		GoVersion:     runtime.Version(),
 		MQTTConnected: s.mqttConnected.Load(),
 		UptimeSeconds: s.UptimeSeconds(),
+		NumGoroutine:  runtime.NumGoroutine(),
+		Config:        s.Info,
 	}
-	health.Commands.Received = s.commandsRecv.Load()
-	health.Commands.Executed = s.commandsExec.Load()
-	health.Commands.Failed = s.commandsFail.Load()
 
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(health)
 }

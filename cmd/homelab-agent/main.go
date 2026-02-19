@@ -46,11 +46,7 @@ func run() {
 		"metricsInterval", cfg.MetricsInterval, "metricsPort", cfg.MetricsPort,
 		"deployEnabled", cfg.DeployEnabled, "deployDir", cfg.DeployDir)
 
-	// 2. Start metrics server
-	met := metrics.NewServer()
-	met.Start(cfg.MetricsPort)
-
-	// 3. Resolve hostname
+	// 2. Resolve hostname
 	fullHostname, err := os.Hostname()
 	if err != nil {
 		log.Fatalf("hostname: %v", err)
@@ -59,6 +55,19 @@ func run() {
 	if idx := strings.Index(hostname, "."); idx != -1 {
 		hostname = hostname[:idx]
 	}
+
+	// 3. Start metrics server
+	met := metrics.NewServer()
+	met.Info = metrics.HealthInfo{
+		Version:            Version,
+		Hostname:           hostname,
+		AutoUpdateEnabled:  cfg.AutoUpdateEnabled,
+		AutoUpdateRepo:     cfg.AutoUpdateRepo,
+		AutoUpdateInterval: cfg.AutoUpdateInterval,
+		DeployEnabled:      cfg.DeployEnabled,
+		DeployDir:          cfg.DeployDir,
+	}
+	met.Start(cfg.MetricsPort)
 
 	// 4. Build MQTT topics
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)

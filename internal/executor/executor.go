@@ -26,6 +26,9 @@ type Response struct {
 type Executor struct {
 	allowedServices     map[string]bool
 	allowedComposePaths map[string]bool
+	DeployEnabled       bool
+	DeployDir           string
+	OnWhitelistChange   func([]string)
 }
 
 // New creates an Executor with the given allowed services and compose paths.
@@ -41,6 +44,15 @@ func New(services []string, composePaths []string) *Executor {
 		e.allowedComposePaths[p] = true
 	}
 	return e
+}
+
+// AllowedServicesList returns the current allowed services as a sorted slice.
+func (e *Executor) AllowedServicesList() []string {
+	var list []string
+	for s := range e.allowedServices {
+		list = append(list, s)
+	}
+	return list
 }
 
 // Execute runs the given action with args, enforcing the whitelist.
@@ -99,6 +111,40 @@ func (e *Executor) Execute(req Request) Response {
 		}
 		resp.Status = "ok"
 		resp.Data = data
+
+	case "service.check":
+		svc := req.Args["service"]
+		if svc == "" {
+			resp.Status = "error"
+			resp.Error = "missing required arg: service"
+			return resp
+		}
+		data, err := e.serviceCheck(svc)
+		if err != nil {
+			resp.Status = "error"
+			resp.Error = err.Error()
+			return resp
+		}
+		resp.Status = "ok"
+		resp.Data = data
+
+	case "service.deploy":
+		if !e.DeployEnabled {
+			resp.Status = "error"
+			resp.Error = "deploy functionality is not enabled"
+			return resp
+		}
+		data, err := e.serviceDeploy(req.Args)
+		if err != nil {
+			resp.Status = "error"
+			resp.Error = err.Error()
+			return resp
+		}
+		resp.Status = "ok"
+		resp.Data = data
+		if e.OnWhitelistChange != nil {
+			e.OnWhitelistChange(e.AllowedServicesList())
+		}
 
 	case "system.metrics":
 		data, err := SystemMetrics()

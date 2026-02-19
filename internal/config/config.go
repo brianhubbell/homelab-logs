@@ -18,6 +18,8 @@ type Config struct {
 	MetricsPort         int
 	MetricsInterval     int
 	Debug               bool
+	DeployEnabled       bool
+	DeployDir           string
 }
 
 // Load reads configuration from environment variables.
@@ -39,6 +41,8 @@ func Load() (*Config, error) {
 		MetricsPort:     9110,
 		MetricsInterval: 60,
 		Debug:           goutils.StrToBool(os.Getenv("DEBUG")),
+		DeployEnabled:   goutils.StrToBool(os.Getenv("DEPLOY_ENABLED")),
+		DeployDir:       envOrDefault("DEPLOY_DIR", "/opt/homelab-services"),
 	}
 
 	if v := os.Getenv("ALLOWED_COMPOSE_PATHS"); v != "" {

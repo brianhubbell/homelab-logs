@@ -39,7 +39,8 @@ func run() {
 	goutils.Log("config loaded",
 		"broker", cfg.MQTTBroker, "prefix", cfg.TopicPrefix,
 		"services", cfg.AllowedServices, "composePaths", cfg.AllowedComposePaths,
-		"metricsInterval", cfg.MetricsInterval, "metricsPort", cfg.MetricsPort)
+		"metricsInterval", cfg.MetricsInterval, "metricsPort", cfg.MetricsPort,
+		"deployEnabled", cfg.DeployEnabled, "deployDir", cfg.DeployDir)
 
 	// 2. Start metrics server
 	met := metrics.NewServer()
@@ -56,10 +57,10 @@ func run() {
 	}
 
 	// 4. Build MQTT topics
-	configTopic := fmt.Sprintf("%s/node/%s/config", cfg.TopicPrefix, hostname)
-	commandTopic := fmt.Sprintf("%s/node/%s/command", cfg.TopicPrefix, hostname)
-	responseTopic := fmt.Sprintf("%s/node/%s/response", cfg.TopicPrefix, hostname)
-	metricsTopic := fmt.Sprintf("%s/node/%s/metrics", cfg.TopicPrefix, hostname)
+	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
+	commandTopic := fmt.Sprintf("control/%s/%s/command", cfg.TopicPrefix, hostname)
+	responseTopic := fmt.Sprintf("control/%s/%s/response", cfg.TopicPrefix, hostname)
+	metricsTopic := fmt.Sprintf("observability/%s/%s/metrics", cfg.TopicPrefix, hostname)
 
 	// 5. Build node config for self-registration
 	nodeConfig := map[string]interface{}{
@@ -79,6 +80,8 @@ func run() {
 
 	// 6. Create executor
 	exec := executor.New(cfg.AllowedServices, cfg.AllowedComposePaths)
+	exec.DeployEnabled = cfg.DeployEnabled
+	exec.DeployDir = cfg.DeployDir
 
 	// 7. Connect MQTT
 	var h *handler.Handler
@@ -101,13 +104,28 @@ func run() {
 		log.Fatalf("MQTT: %v", err)
 	}
 
-	// 8. Create handler and subscribe to command topic
+	// 8. Wire whitelist change callback to re-publish node config
+	exec.OnWhitelistChange = func(services []string) {
+		nodeConfig["allowedServices"] = services
+		payload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
+		if err != nil {
+			goutils.Err("marshal updated node config", "error", err)
+			return
+		}
+		if err := client.PublishRetained(configTopic, payload); err != nil {
+			goutils.Err("publish updated node config", "error", err)
+		} else {
+			goutils.Log("published updated node config", "topic", configTopic, "allowedServices", services)
+		}
+	}
+
+	// 9. Create handler and subscribe to command topic
 	h = handler.New(exec, client, met, responseTopic)
 	if err := client.Subscribe(commandTopic, h.HandleMessage); err != nil {
 		log.Fatalf("subscribe command topic: %v", err)
 	}
 
-	// 9. Start metrics publishing ticker
+	// 10. Start metrics publishing ticker
 	if cfg.MetricsInterval > 0 {
 		go func() {
 			ticker := time.NewTicker(time.Duration(cfg.MetricsInterval) * time.Second)
@@ -117,6 +135,9 @@ func run() {
 				if err != nil {
 					goutils.Debug("system metrics error", "error", err)
 					continue
+				}
+				for k, v := range met.GetMetricsPayload() {
+					data[k] = v
 				}
 				envelope := goutils.NewMessage(data, nil, "metrics")
 				payload, err := json.Marshal(envelope)
@@ -132,7 +153,7 @@ func run() {
 
 	goutils.Log("homelab-agent ready", "hostname", hostname, "commandTopic", commandTopic)
 
-	// 10. Signal handling for graceful shutdown
+	// 11. Signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 

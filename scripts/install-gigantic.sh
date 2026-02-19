@@ -3,6 +3,8 @@ set -euo pipefail
 
 # Run on gigantic as: sudo bash install-gigantic.sh
 
+CALLER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
+
 # 1. Create dedicated user
 if ! id homelab-agent &>/dev/null; then
     useradd -r -s /usr/sbin/nologin homelab-agent
@@ -13,7 +15,7 @@ fi
 usermod -aG docker homelab-agent
 
 # 3. Install binary
-cp ~/homelab-agent /usr/local/bin/homelab-agent
+cp "$CALLER_HOME"/homelab-agent /usr/local/bin/homelab-agent
 chmod 755 /usr/local/bin/homelab-agent
 echo "installed binary"
 
@@ -38,7 +40,7 @@ chmod 440 /etc/sudoers.d/homelab-agent
 echo "wrote sudoers.d/homelab-agent"
 
 # 6. Install and start service
-cp ~/homelab-agent.service /etc/systemd/system/homelab-agent.service
+cp "$CALLER_HOME"/homelab-agent.service /etc/systemd/system/homelab-agent.service
 systemctl daemon-reload
 systemctl enable homelab-agent
 systemctl start homelab-agent

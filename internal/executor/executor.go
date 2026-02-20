@@ -2,8 +2,14 @@ package executor
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
+
+func parseBool(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s == "true" || s == "1" || s == "yes" || s == "on"
+}
 
 // Request represents an incoming command.
 type Request struct {
@@ -28,9 +34,12 @@ type Executor struct {
 	allowedComposePaths map[string]bool
 	DeployEnabled       bool
 	DeployDir           string
-	OnWhitelistChange   func([]string)
-	CurrentVersion      string
+	AutoUpdateEnabled   bool
 	AutoUpdateRepo      string
+	AutoUpdateInterval  int
+	OnWhitelistChange   func([]string)
+	OnConfigChange      func(key, value string)
+	CurrentVersion      string
 }
 
 // New creates an Executor with the given allowed services and compose paths.
@@ -172,6 +181,50 @@ func (e *Executor) Execute(req Request) Response {
 		}
 		resp.Status = "ok"
 		resp.Data = data
+
+	case "config.get":
+		resp.Status = "ok"
+		resp.Data = map[string]interface{}{
+			"deploy_enabled":       e.DeployEnabled,
+			"deploy_dir":           e.DeployDir,
+			"auto_update_enabled":  e.AutoUpdateEnabled,
+			"auto_update_repo":     e.AutoUpdateRepo,
+			"auto_update_interval": e.AutoUpdateInterval,
+		}
+
+	case "config.set":
+		key := req.Args["key"]
+		value := req.Args["value"]
+		if key == "" {
+			resp.Status = "error"
+			resp.Error = "missing required arg: key"
+			return resp
+		}
+		switch key {
+		case "deploy_enabled":
+			e.DeployEnabled = parseBool(value)
+		case "auto_update_enabled":
+			e.AutoUpdateEnabled = parseBool(value)
+		case "auto_update_repo":
+			e.AutoUpdateRepo = value
+		case "auto_update_interval":
+			if n, err := strconv.Atoi(value); err == nil && n > 0 {
+				e.AutoUpdateInterval = n
+			} else {
+				resp.Status = "error"
+				resp.Error = fmt.Sprintf("invalid interval %q", value)
+				return resp
+			}
+		default:
+			resp.Status = "error"
+			resp.Error = fmt.Sprintf("unknown config key %q", key)
+			return resp
+		}
+		resp.Status = "ok"
+		resp.Data = map[string]interface{}{"key": key, "value": value}
+		if e.OnConfigChange != nil {
+			e.OnConfigChange(key, value)
+		}
 
 	default:
 		resp.Status = "error"

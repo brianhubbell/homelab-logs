@@ -15,7 +15,7 @@ type Config struct {
 	TopicPrefix         string
 	AllowedServices     []string
 	AllowedComposePaths []string
-	MetricsPort         int
+	HealthPort          int
 	MetricsInterval     int
 	Debug               bool
 	DeployEnabled       bool
@@ -41,7 +41,7 @@ func Load() (*Config, error) {
 		MQTTBroker:      broker,
 		TopicPrefix:     envOrDefault("TOPIC_PREFIX", "agent"),
 		AllowedServices: splitCSV(allowedRaw),
-		MetricsPort:     9110,
+		HealthPort:      9110,
 		MetricsInterval: 60,
 		Debug:           goutils.StrToBool(os.Getenv("DEBUG")),
 		DeployEnabled:   goutils.StrToBool(os.Getenv("DEPLOY_ENABLED")),
@@ -55,12 +55,12 @@ func Load() (*Config, error) {
 		cfg.AllowedComposePaths = splitCSV(v)
 	}
 
-	if v := os.Getenv("METRICS_PORT"); v != "" {
+	if v := os.Getenv("HEALTH_PORT"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return nil, fmt.Errorf("invalid METRICS_PORT %q: %w", v, err)
+			return nil, fmt.Errorf("invalid HEALTH_PORT %q: %w", v, err)
 		}
-		cfg.MetricsPort = n
+		cfg.HealthPort = n
 	}
 
 	if v := os.Getenv("METRICS_INTERVAL_SECONDS"); v != "" {

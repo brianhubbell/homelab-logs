@@ -21,7 +21,7 @@ MQTT_BROKER=gigantic.lan
 TOPIC_PREFIX=agent
 ALLOWED_SERVICES=bt-to-mqtt,wifi-to-mqtt,homebridge,node_exporter,pm2-piforza
 ALLOWED_COMPOSE_PATHS=
-METRICS_PORT=9110
+HEALTH_PORT=9110
 METRICS_INTERVAL_SECONDS=60
 DEBUG=false
 EOF

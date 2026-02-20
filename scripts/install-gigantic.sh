@@ -26,7 +26,7 @@ MQTT_BROKER=gigantic.lan
 TOPIC_PREFIX=agent
 ALLOWED_SERVICES=govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt
 ALLOWED_COMPOSE_PATHS=/home/gigantic/homelab/redis-api/compose.yml,/home/gigantic/homelab/influx-api/compose.yml,/home/gigantic/homelab/mqtt-to-influxdb/compose.yml,/home/gigantic/homelab/berry-place-app/compose.yml,/home/gigantic/homelab/emporia-to-mqtt/compose.yml,/home/gigantic/homelab/docker-compose.yml,/home/gigantic/homelab/sunpower-to-mqtt/compose.yml,/home/gigantic/homelab/awair-to-mqtt/compose.yml
-METRICS_PORT=9110
+HEALTH_PORT=9110
 METRICS_INTERVAL_SECONDS=60
 DEBUG=false
 EOF

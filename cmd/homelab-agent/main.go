@@ -15,7 +15,7 @@ import (
 	"homelab-agent/internal/config"
 	"homelab-agent/internal/executor"
 	"homelab-agent/internal/handler"
-	"homelab-agent/internal/metrics"
+	"homelab-agent/internal/health"
 	"homelab-agent/internal/mqtt"
 )
 
@@ -43,7 +43,7 @@ func run() {
 	goutils.Log("config loaded",
 		"broker", cfg.MQTTBroker, "prefix", cfg.TopicPrefix,
 		"services", cfg.AllowedServices, "composePaths", cfg.AllowedComposePaths,
-		"metricsInterval", cfg.MetricsInterval, "metricsPort", cfg.MetricsPort,
+		"metricsInterval", cfg.MetricsInterval, "healthPort", cfg.HealthPort,
 		"deployEnabled", cfg.DeployEnabled, "deployDir", cfg.DeployDir)
 
 	// 2. Resolve hostname
@@ -56,9 +56,9 @@ func run() {
 		hostname = hostname[:idx]
 	}
 
-	// 3. Start metrics server
-	met := metrics.NewServer()
-	met.Info = metrics.HealthInfo{
+	// 3. Start health server
+	met := health.NewServer()
+	met.Info = health.HealthInfo{
 		Version:            Version,
 		Hostname:           hostname,
 		AutoUpdateEnabled:  cfg.AutoUpdateEnabled,
@@ -67,7 +67,7 @@ func run() {
 		DeployEnabled:      cfg.DeployEnabled,
 		DeployDir:          cfg.DeployDir,
 	}
-	met.Start(cfg.MetricsPort)
+	met.Start(cfg.HealthPort)
 
 	// 4. Build MQTT topics
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
@@ -76,12 +76,17 @@ func run() {
 	metricsTopic := fmt.Sprintf("observability/homelab-agent/%s/metrics", hostname)
 
 	// 5. Build node config for self-registration
+	hostType := os.Getenv("HOST_TYPE")
+	if hostType == "" {
+		hostType = "physical"
+	}
 	nodeConfig := map[string]interface{}{
 		"hostname":            hostname,
 		"label":               hostname,
 		"type":                "agent",
+		"host_type":           hostType,
 		"address":             hostname + ".lan",
-		"port":                cfg.MetricsPort,
+		"port":                cfg.HealthPort,
 		"allowedServices":     cfg.AllowedServices,
 		"allowedComposePaths": cfg.AllowedComposePaths,
 		"version":             Version,
@@ -96,7 +101,9 @@ func run() {
 	exec.DeployEnabled = cfg.DeployEnabled
 	exec.DeployDir = cfg.DeployDir
 	exec.CurrentVersion = Version
+	exec.AutoUpdateEnabled = cfg.AutoUpdateEnabled
 	exec.AutoUpdateRepo = cfg.AutoUpdateRepo
+	exec.AutoUpdateInterval = cfg.AutoUpdateInterval
 
 	// Add service versions to node config
 	nodeConfig["serviceVersions"] = exec.ServiceVersions()
@@ -142,6 +149,20 @@ func run() {
 		}
 	}
 
+	// 8b. Wire config change callback to update health info
+	exec.OnConfigChange = func(key, value string) {
+		met.Info = health.HealthInfo{
+			Version:            Version,
+			Hostname:           hostname,
+			AutoUpdateEnabled:  exec.AutoUpdateEnabled,
+			AutoUpdateRepo:     exec.AutoUpdateRepo,
+			AutoUpdateInterval: exec.AutoUpdateInterval,
+			DeployEnabled:      exec.DeployEnabled,
+			DeployDir:          exec.DeployDir,
+		}
+		goutils.Log("config updated via command", "key", key, "value", value)
+	}
+
 	// 9. Create handler and subscribe to command topic
 	h = handler.New(exec, client, met, responseTopic)
 	if err := client.Subscribe(commandTopic, h.HandleMessage); err != nil {
@@ -159,6 +180,7 @@ func run() {
 					goutils.Debug("system metrics error", "error", err)
 					continue
 				}
+				data["host_type"] = hostType
 				for k, v := range met.GetMetricsPayload() {
 					data[k] = v
 				}

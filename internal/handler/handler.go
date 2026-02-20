@@ -8,7 +8,7 @@ import (
 	paho "github.com/eclipse/paho.mqtt.golang"
 
 	"homelab-agent/internal/executor"
-	"homelab-agent/internal/metrics"
+	"homelab-agent/internal/health"
 	"homelab-agent/internal/mqtt"
 )
 
@@ -17,12 +17,12 @@ import (
 type Handler struct {
 	exec          *executor.Executor
 	client        *mqtt.Client
-	met           *metrics.Server
+	met           *health.Server
 	responseTopic string
 }
 
 // New creates a Handler.
-func New(exec *executor.Executor, client *mqtt.Client, met *metrics.Server, responseTopic string) *Handler {
+func New(exec *executor.Executor, client *mqtt.Client, met *health.Server, responseTopic string) *Handler {
 	return &Handler{
 		exec:          exec,
 		client:        client,

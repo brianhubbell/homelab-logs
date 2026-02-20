@@ -1,5 +1,5 @@
 .PHONY: build build-linux-amd64 build-linux-arm64 build-linux-armv7 build-darwin-arm64 build-all test clean \
-       deploy deploy-gigantic deploy-pipvs deploy-piforza
+       deploy deploy-gigantic deploy-pipvs deploy-piforza deploy-mini deploy-FH97NV255C
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X main.Version=$(VERSION)"
@@ -29,11 +29,19 @@ deploy-pipvs: build-linux-armv7
 	scp build/bin/homelab-agent-linux-armv7 pipvs:~/homelab-agent
 	ssh -t pipvs 'sudo systemctl stop homelab-agent; sudo cp ~/homelab-agent /usr/local/bin/homelab-agent && sudo systemctl start homelab-agent'
 
-deploy-piforza: build-linux-armv7
-	scp build/bin/homelab-agent-linux-armv7 piforza:~/homelab-agent
+deploy-piforza: build-linux-arm64
+	scp build/bin/homelab-agent-linux-arm64 piforza:~/homelab-agent
 	ssh -t piforza 'sudo systemctl stop homelab-agent; sudo cp ~/homelab-agent /usr/local/bin/homelab-agent && sudo systemctl start homelab-agent'
 
-deploy: deploy-gigantic deploy-pipvs deploy-piforza
+deploy-mini: build-darwin-arm64
+	scp build/bin/homelab-agent-darwin-arm64 mini:~/homelab-agent
+	ssh -t mini 'sudo pkill homelab-agent; sudo cp ~/homelab-agent /usr/local/bin/homelab-agent && sudo /usr/local/bin/homelab-agent &'
+
+deploy-FH97NV255C: build-darwin-arm64
+	scp build/bin/homelab-agent-darwin-arm64 FH97NV255C:~/homelab-agent
+	ssh -t FH97NV255C 'sudo pkill homelab-agent; sudo cp ~/homelab-agent /usr/local/bin/homelab-agent && sudo /usr/local/bin/homelab-agent &'
+
+deploy: deploy-gigantic deploy-pipvs deploy-piforza deploy-mini deploy-FH97NV255C
 
 test:
 	go test ./...

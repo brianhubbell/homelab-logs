@@ -1,4 +1,4 @@
-package metrics
+package health
 
 import (
 	"encoding/json"
@@ -35,7 +35,7 @@ type Server struct {
 	commandsFail  atomic.Int64
 }
 
-// NewServer creates a metrics server.
+// NewServer creates a health server.
 func NewServer() *Server {
 	s := &Server{
 		startTime: time.Now(),
@@ -83,9 +83,9 @@ func (s *Server) Start(port int) {
 	}
 
 	go func() {
-		goutils.Log("metrics server listening", "port", port)
+		goutils.Log("health server listening", "port", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			goutils.Err("metrics server error", "error", err)
+			goutils.Err("health server error", "error", err)
 		}
 	}()
 }

@@ -32,7 +32,7 @@ cat > /Library/LaunchDaemons/com.homelab-agent.plist <<PLISTEOF
         <string>agent</string>
         <key>ALLOWED_SERVICES</key>
         <string>${ALLOWED_SERVICES}</string>
-        <key>METRICS_PORT</key>
+        <key>HEALTH_PORT</key>
         <string>9110</string>
         <key>METRICS_INTERVAL_SECONDS</key>
         <string>60</string>

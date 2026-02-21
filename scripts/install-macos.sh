@@ -1,60 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: sudo bash install-macos.sh <ALLOWED_SERVICES>
-# Example: sudo bash install-macos.sh "bt-to-mqtt,govee-to-mqtt,wifi-to-mqtt"
+# Usage: bash install-macos.sh <DEPLOY_DIR> <ALLOWED_SERVICES>
+# Example: bash install-macos.sh /Volumes/dev "bt-to-mqtt,govee-to-mqtt"
+# No sudo required — installs as a user-level LaunchAgent.
 
-ALLOWED_SERVICES="${1:?Usage: sudo bash install-macos.sh <ALLOWED_SERVICES>}"
-CALLER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
+DEPLOY_DIR="${1:?Usage: bash install-macos.sh <DEPLOY_DIR> <ALLOWED_SERVICES>}"
+ALLOWED_SERVICES="${2:?Usage: bash install-macos.sh <DEPLOY_DIR> <ALLOWED_SERVICES>}"
 
-# 1. Install binary
-cp "$CALLER_HOME"/homelab-agent /usr/local/bin/homelab-agent
-chmod 755 /usr/local/bin/homelab-agent
-echo "installed binary to /usr/local/bin/homelab-agent"
+REPO_DIR="${DEPLOY_DIR}/homelab-agent"
+BINARY="${REPO_DIR}/build/bin/homelab-agent"
+PLIST_TEMPLATE="${REPO_DIR}/scripts/com.homelab-agent.plist"
+PLIST_DEST="${HOME}/Library/LaunchAgents/com.homelab-agent.plist"
+DOMAIN="gui/$(id -u)"
 
-# 2. Create LaunchDaemon plist
-cat > /Library/LaunchDaemons/com.homelab-agent.plist <<PLISTEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.homelab-agent</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/homelab-agent</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>MQTT_BROKER</key>
-        <string>gigantic.lan</string>
-        <key>TOPIC_PREFIX</key>
-        <string>agent</string>
-        <key>ALLOWED_SERVICES</key>
-        <string>${ALLOWED_SERVICES}</string>
-        <key>HEALTH_PORT</key>
-        <string>9110</string>
-        <key>METRICS_INTERVAL_SECONDS</key>
-        <string>60</string>
-        <key>DEBUG</key>
-        <string>false</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/var/log/homelab-agent.log</string>
-    <key>StandardErrorPath</key>
-    <string>/var/log/homelab-agent.log</string>
-</dict>
-</plist>
-PLISTEOF
-echo "wrote /Library/LaunchDaemons/com.homelab-agent.plist"
+# 1. Verify repo exists
+if [ ! -d "${REPO_DIR}/.git" ]; then
+    echo "ERROR: repo not found at ${REPO_DIR} — clone it first"
+    exit 1
+fi
 
-# 3. Unload if previously loaded, then load
-launchctl unload /Library/LaunchDaemons/com.homelab-agent.plist 2>/dev/null || true
-launchctl load /Library/LaunchDaemons/com.homelab-agent.plist
+# 2. Build if binary doesn't exist
+if [ ! -f "${BINARY}" ]; then
+    echo "building homelab-agent..."
+    cd "${REPO_DIR}"
+    make build
+fi
+
+# 3. Ensure logs directory exists
+mkdir -p "${HOME}/Library/Logs"
+
+# 4. Substitute plist template
+mkdir -p "${HOME}/Library/LaunchAgents"
+sed \
+    -e "s|__BINARY_PATH__|${BINARY}|g" \
+    -e "s|__ALLOWED_SERVICES__|${ALLOWED_SERVICES}|g" \
+    -e "s|__DEPLOY_DIR__|${DEPLOY_DIR}|g" \
+    -e "s|__HOME__|${HOME}|g" \
+    "${PLIST_TEMPLATE}" > "${PLIST_DEST}"
+echo "wrote ${PLIST_DEST}"
+
+# 5. Unload if previously loaded, then load
+launchctl bootout "${DOMAIN}/com.homelab-agent" 2>/dev/null || true
+launchctl bootstrap "${DOMAIN}" "${PLIST_DEST}"
 echo "service loaded"
 
 sleep 2

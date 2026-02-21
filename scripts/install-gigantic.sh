@@ -3,7 +3,9 @@ set -euo pipefail
 
 # Run on gigantic as: sudo bash install-gigantic.sh
 
-CALLER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
+DEPLOY_DIR="/opt/homelab-services"
+REPO_DIR="${DEPLOY_DIR}/homelab-agent"
+BINARY="${REPO_DIR}/build/bin/homelab-agent"
 
 # 1. Create dedicated user
 if ! id homelab-agent &>/dev/null; then
@@ -14,33 +16,44 @@ fi
 # 2. Add to docker group
 usermod -aG docker homelab-agent
 
-# 3. Install binary
-cp "$CALLER_HOME"/homelab-agent /usr/local/bin/homelab-agent
-chmod 755 /usr/local/bin/homelab-agent
-echo "installed binary"
+# 3. Create deploy dir owned by homelab-agent user
+mkdir -p "${DEPLOY_DIR}"
+chown homelab-agent:homelab-agent "${DEPLOY_DIR}"
 
-# 4. Create env file
+# 4. Clone repo as homelab-agent user (or pull if exists)
+if [ -d "${REPO_DIR}/.git" ]; then
+    sudo -u homelab-agent git -C "${REPO_DIR}" pull
+else
+    sudo -u homelab-agent git clone https://github.com/brianhubbell/homelab-agent.git "${REPO_DIR}"
+fi
+
+# 5. Build binary in-place
+sudo -u homelab-agent bash -c "cd ${REPO_DIR} && CGO_ENABLED=0 go build -ldflags \"-X main.Version=\$(git describe --always)\" -o build/bin/homelab-agent ./cmd/homelab-agent/"
+echo "built binary at ${BINARY}"
+
+# 6. Create env file
 mkdir -p /etc/homelab-agent
 cat > /etc/homelab-agent/env <<'EOF'
 MQTT_BROKER=gigantic.lan
 TOPIC_PREFIX=agent
 ALLOWED_SERVICES=govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt
-ALLOWED_COMPOSE_PATHS=/home/gigantic/homelab/redis-api/compose.yml,/home/gigantic/homelab/influx-api/compose.yml,/home/gigantic/homelab/mqtt-to-influxdb/compose.yml,/home/gigantic/homelab/berry-place-app/compose.yml,/home/gigantic/homelab/emporia-to-mqtt/compose.yml,/home/gigantic/homelab/docker-compose.yml,/home/gigantic/homelab/sunpower-to-mqtt/compose.yml,/home/gigantic/homelab/awair-to-mqtt/compose.yml
+ALLOWED_COMPOSE_PATHS=/home/gigantic/homelab-services/redis-api/compose.yml,/home/gigantic/homelab-services/influx-api/compose.yml,/home/gigantic/homelab-services/mqtt-to-influxdb/compose.yml,/home/gigantic/homelab-services/berry-place-app/compose.yml,/home/gigantic/homelab-services/emporia-to-mqtt/compose.yml,/home/gigantic/homelab-services/docker-compose.yml,/home/gigantic/homelab-services/sunpower-to-mqtt/compose.yml,/home/gigantic/homelab-services/awair-to-mqtt/compose.yml
+DEPLOY_DIR=/opt/homelab-services
 HEALTH_PORT=9110
 METRICS_INTERVAL_SECONDS=60
 DEBUG=false
 EOF
 echo "wrote /etc/homelab-agent/env"
 
-# 5. Scoped sudoers for systemctl
+# 7. Scoped sudoers for systemctl (managing OTHER services only)
 cat > /etc/sudoers.d/homelab-agent <<'EOF'
 homelab-agent ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *
 EOF
 chmod 440 /etc/sudoers.d/homelab-agent
 echo "wrote sudoers.d/homelab-agent"
 
-# 6. Install and start service
-cp "$CALLER_HOME"/homelab-agent.service /etc/systemd/system/homelab-agent.service
+# 8. Install and start service
+cp "${REPO_DIR}/scripts/homelab-agent.service" /etc/systemd/system/homelab-agent.service
 systemctl daemon-reload
 systemctl enable homelab-agent
 systemctl start homelab-agent

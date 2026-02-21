@@ -45,6 +45,11 @@ type Executor struct {
 	// AutoUpdateIntervalChanged is signalled when the auto_update_interval is
 	// changed via config.set so the ticker goroutine can reset itself.
 	AutoUpdateIntervalChanged chan struct{}
+
+	// ShutdownCh is sent on after a successful self-update so main can
+	// publish the MQTT response before exiting and letting the service
+	// manager restart with the new binary.
+	ShutdownCh chan string
 }
 
 // New creates an Executor with the given allowed services and compose paths.
@@ -53,6 +58,7 @@ func New(services []string, composePaths []string) *Executor {
 		allowedServices:           make(map[string]bool),
 		allowedComposePaths:       make(map[string]bool),
 		AutoUpdateIntervalChanged: make(chan struct{}, 1),
+		ShutdownCh:                make(chan string, 1),
 	}
 	for _, s := range services {
 		e.allowedServices[s] = true

@@ -6,22 +6,32 @@
     <string>com.homelab-agent</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/homelab-agent</string>
+        <string>__BINARY_PATH__</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>MQTT_BROKER</key>
-        <string>192.168.1.100</string>
+        <string>gigantic.lan</string>
+        <key>TOPIC_PREFIX</key>
+        <string>agent</string>
         <key>ALLOWED_SERVICES</key>
-        <string>govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt</string>
+        <string>__ALLOWED_SERVICES__</string>
+        <key>DEPLOY_DIR</key>
+        <string>__DEPLOY_DIR__</string>
+        <key>HEALTH_PORT</key>
+        <string>9110</string>
+        <key>METRICS_INTERVAL_SECONDS</key>
+        <string>60</string>
+        <key>DEBUG</key>
+        <string>false</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/var/log/homelab-agent.log</string>
+    <string>__HOME__/Library/Logs/homelab-agent.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/homelab-agent.log</string>
+    <string>__HOME__/Library/Logs/homelab-agent.log</string>
 </dict>
 </plist>

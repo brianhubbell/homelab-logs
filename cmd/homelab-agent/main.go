@@ -43,8 +43,7 @@ func run() {
 	goutils.Log("config loaded",
 		"broker", cfg.MQTTBroker, "prefix", cfg.TopicPrefix,
 		"services", cfg.AllowedServices, "composePaths", cfg.AllowedComposePaths,
-		"metricsInterval", cfg.MetricsInterval, "healthPort", cfg.HealthPort,
-		"deployDir", cfg.DeployDir)
+		"healthPort", cfg.HealthPort, "deployDir", cfg.DeployDir)
 
 	// 2. Resolve hostname
 	fullHostname, err := os.Hostname()
@@ -64,13 +63,14 @@ func run() {
 		AutoUpdateInterval: cfg.AutoUpdateInterval,
 		DeployDir:          cfg.DeployDir,
 	}
+	met.SetMetricsCollector(executor.SystemMetrics)
 	met.Start(cfg.HealthPort)
 
 	// 4. Build MQTT topics
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
 	commandTopic := fmt.Sprintf("control/%s/%s/command", cfg.TopicPrefix, hostname)
 	responseTopic := fmt.Sprintf("control/%s/%s/response", cfg.TopicPrefix, hostname)
-	metricsTopic := fmt.Sprintf("observability/homelab-agent/%s/metrics", hostname)
+	heartbeatTopic := fmt.Sprintf("heartbeat/homelab-agent/%s", hostname)
 
 	// 5. Build node config for self-registration
 	hostType := os.Getenv("HOST_TYPE")
@@ -177,37 +177,29 @@ func run() {
 		log.Fatalf("subscribe command topic: %v", err)
 	}
 
-	// 10. Start metrics publishing ticker
-	if cfg.MetricsInterval > 0 {
-		go func() {
-			ticker := time.NewTicker(time.Duration(cfg.MetricsInterval) * time.Second)
-			defer ticker.Stop()
-			for range ticker.C {
-				data, err := executor.SystemMetrics()
-				if err != nil {
-					goutils.Debug("system metrics error", "error", err)
-					continue
-				}
-				data["host_type"] = hostType
-			data["health_endpoint"] = map[string]interface{}{
-				"host": address,
-				"port": cfg.HealthPort,
-				"path": "/health",
+	// 10. Start heartbeat ticker (10s) for discovery and liveness
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			hb := map[string]interface{}{
+				"hostname":  hostname,
+				"host_type": hostType,
+				"health_endpoint": map[string]interface{}{
+					"host": address,
+					"port": cfg.HealthPort,
+					"path": "/health",
+				},
 			}
-				for k, v := range met.GetMetricsPayload() {
-					data[k] = v
-				}
-				envelope := goutils.NewMessage(data, nil, "metrics")
-				payload, err := json.Marshal(envelope)
-				if err != nil {
-					continue
-				}
-				if err := client.Publish(metricsTopic, payload); err != nil {
-					goutils.Debug("publish metrics error", "error", err)
-				}
+			payload, err := json.Marshal(goutils.NewMessage(hb, nil, "heartbeat"))
+			if err != nil {
+				continue
 			}
-		}()
-	}
+			if err := client.Publish(heartbeatTopic, payload); err != nil {
+				goutils.Debug("publish heartbeat error", "error", err)
+			}
+		}
+	}()
 
 	// 11. Start auto-update goroutine with resettable timer
 	{
@@ -246,8 +238,15 @@ func run() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	sig := <-sigCh
-	goutils.Log("shutting down", "signal", sig)
+	select {
+	case sig := <-sigCh:
+		goutils.Log("shutting down", "signal", sig)
+	case newVer := <-exec.ShutdownCh:
+		goutils.Log("restarting for update", "new_version", newVer)
+		// Give MQTT time to flush the response before we disconnect.
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	if err := client.PublishRetained(configTopic, []byte{}); err != nil {
 		goutils.Err("clearing node config", "error", err)
 	} else {

@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +31,16 @@ type Server struct {
 	commandsRecv  atomic.Int64
 	commandsExec  atomic.Int64
 	commandsFail  atomic.Int64
+
+	// HTTP endpoint metrics
+	httpRequests  atomic.Int64
+	httpErrors    atomic.Int64
+	httpLatencyNs atomic.Int64 // cumulative nanoseconds
+
+	// Cached system metrics, refreshed in background
+	systemMetricsMu     sync.RWMutex
+	cachedSystemMetrics map[string]interface{}
+	metricsCollector    func() (map[string]interface{}, error)
 }
 
 // NewServer creates a health server.
@@ -60,6 +71,33 @@ func (s *Server) UptimeSeconds() int64 {
 	return int64(math.Round(time.Since(s.startTime).Seconds()))
 }
 
+// SetMetricsCollector injects a system metrics function and starts background refresh.
+func (s *Server) SetMetricsCollector(fn func() (map[string]interface{}, error)) {
+	s.metricsCollector = fn
+	go func() {
+		s.refreshSystemMetrics()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.refreshSystemMetrics()
+		}
+	}()
+}
+
+func (s *Server) refreshSystemMetrics() {
+	if s.metricsCollector == nil {
+		return
+	}
+	data, err := s.metricsCollector()
+	if err != nil {
+		goutils.Debug("system metrics refresh error", "error", err)
+		return
+	}
+	s.systemMetricsMu.Lock()
+	s.cachedSystemMetrics = data
+	s.systemMetricsMu.Unlock()
+}
+
 func (s *Server) GetMetricsPayload() map[string]interface{} {
 	return map[string]interface{}{
 		"uptime_seconds":    s.UptimeSeconds(),
@@ -88,32 +126,51 @@ func (s *Server) Start(port int) {
 }
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	s.httpRequests.Add(1)
+
 	w.Header().Set("Content-Type", "application/json")
 
-	health := struct {
-		Status        int        `json:"status"`
-		Version       string     `json:"version"`
-		Hostname      string     `json:"hostname"`
-		OS            string     `json:"os"`
-		Arch          string     `json:"arch"`
-		GoVersion     string     `json:"go_version"`
-		MQTTConnected bool       `json:"mqtt_connected"`
-		UptimeSeconds int64      `json:"uptime_seconds"`
-		NumGoroutine  int        `json:"num_goroutine"`
-		Config        HealthInfo `json:"config"`
-	}{
-		Status:        http.StatusOK,
-		Version:       s.Info.Version,
-		Hostname:      s.Info.Hostname,
-		OS:            runtime.GOOS,
-		Arch:          runtime.GOARCH,
-		GoVersion:     runtime.Version(),
-		MQTTConnected: s.mqttConnected.Load(),
-		UptimeSeconds: s.UptimeSeconds(),
-		NumGoroutine:  runtime.NumGoroutine(),
-		Config:        s.Info,
+	totalReqs := s.httpRequests.Load()
+	totalLatency := s.httpLatencyNs.Load()
+	var avgLatencyMs float64
+	if totalReqs > 1 {
+		avgLatencyMs = float64(totalLatency) / float64(totalReqs-1) / 1e6
+	}
+
+	health := map[string]interface{}{
+		"status":            http.StatusOK,
+		"version":           s.Info.Version,
+		"hostname":          s.Info.Hostname,
+		"os":                runtime.GOOS,
+		"arch":              runtime.GOARCH,
+		"go_version":        runtime.Version(),
+		"mqtt_connected":    s.mqttConnected.Load(),
+		"uptime_seconds":    s.UptimeSeconds(),
+		"num_goroutine":     runtime.NumGoroutine(),
+		"config":            s.Info,
+		"commands_received": s.commandsRecv.Load(),
+		"commands_executed": s.commandsExec.Load(),
+		"commands_failed":   s.commandsFail.Load(),
+		"http": map[string]interface{}{
+			"requests_total":   totalReqs,
+			"errors_total":     s.httpErrors.Load(),
+			"avg_latency_ms":   avgLatencyMs,
+		},
+	}
+
+	// Merge cached system metrics
+	s.systemMetricsMu.RLock()
+	sysMetrics := s.cachedSystemMetrics
+	s.systemMetricsMu.RUnlock()
+	if sysMetrics != nil {
+		health["system"] = sysMetrics
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		s.httpErrors.Add(1)
+	}
+
+	s.httpLatencyNs.Add(time.Since(start).Nanoseconds())
 }

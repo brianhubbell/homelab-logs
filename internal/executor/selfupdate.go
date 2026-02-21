@@ -107,32 +107,19 @@ func (e *Executor) SelfUpdate() (map[string]interface{}, error) {
 		"step": "build", "status": "ok",
 	})
 
-	// 5. Install binary
-	binarySource := filepath.Join(repoDir, "build/bin/homelab-agent")
-	cpCmd := exec.Command("sudo", "cp", binarySource, "/usr/local/bin/homelab-agent")
-	out, err = cpCmd.CombinedOutput()
-	if err != nil {
+	// 5. Signal main to shut down after the MQTT response is published.
+	// The service manager (systemd Restart=always / launchd KeepAlive)
+	// will restart the process with the newly built binary.
+	select {
+	case e.ShutdownCh <- newVersion:
 		steps = append(steps, map[string]interface{}{
-			"step": "install_binary", "status": "error", "detail": strings.TrimSpace(string(out)),
+			"step": "shutdown_scheduled", "status": "ok",
 		})
-		results["steps"] = steps
-		return nil, fmt.Errorf("install binary failed: %s (%w)", strings.TrimSpace(string(out)), err)
-	}
-	steps = append(steps, map[string]interface{}{
-		"step": "install_binary", "status": "ok",
-	})
-
-	// 6. Restart service (service manager kills current process, starts new binary)
-	if err := restartService("homelab-agent"); err != nil {
+	default:
 		steps = append(steps, map[string]interface{}{
-			"step": "restart", "status": "error", "detail": err.Error(),
+			"step": "shutdown_scheduled", "status": "already_pending",
 		})
-		results["steps"] = steps
-		return nil, fmt.Errorf("restart failed: %w", err)
 	}
-	steps = append(steps, map[string]interface{}{
-		"step": "restart", "status": "ok",
-	})
 
 	results["steps"] = steps
 	results["status"] = "updated"

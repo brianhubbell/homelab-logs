@@ -123,7 +123,7 @@ func (e *Executor) SelfUpdate() (map[string]interface{}, error) {
 	})
 
 	// 6. Restart service (service manager kills current process, starts new binary)
-	if err := enableAndStartService("homelab-agent"); err != nil {
+	if err := restartService("homelab-agent"); err != nil {
 		steps = append(steps, map[string]interface{}{
 			"step": "restart", "status": "error", "detail": err.Error(),
 		})

@@ -42,6 +42,16 @@ func stopService(name string) error {
 	return nil
 }
 
+func restartService(name string) error {
+	label := "system/com." + name
+	cmd := exec.Command("sudo", "launchctl", "kickstart", "-k", label)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("restart %s: %s (%w)", name, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func isServiceRunning(name string) bool {
 	cmd := exec.Command("launchctl", "list")
 	out, err := cmd.Output()

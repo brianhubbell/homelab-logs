@@ -8,12 +8,10 @@ import (
 	"strings"
 )
 
+const autoUpdateRepo = "https://github.com/brianhubbell/homelab-agent.git"
+
 // SelfUpdate checks for a new version of homelab-agent and updates if needed.
 func (e *Executor) SelfUpdate() (map[string]interface{}, error) {
-	if e.AutoUpdateRepo == "" {
-		return nil, fmt.Errorf("auto-update repo not configured")
-	}
-
 	results := map[string]interface{}{
 		"service": "homelab-agent",
 	}
@@ -37,7 +35,7 @@ func (e *Executor) SelfUpdate() (map[string]interface{}, error) {
 			"step": "git_fetch", "status": "ok",
 		})
 	} else {
-		cmd := exec.Command("git", "clone", e.AutoUpdateRepo, repoDir)
+		cmd := exec.Command("git", "clone", autoUpdateRepo, repoDir)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			steps = append(steps, map[string]interface{}{
@@ -52,7 +50,7 @@ func (e *Executor) SelfUpdate() (map[string]interface{}, error) {
 	}
 
 	// 2. Check version
-	cmd := exec.Command("git", "describe", "--tags", "--always", "origin/main")
+	cmd := exec.Command("git", "describe", "--always", "origin/main")
 	cmd.Dir = repoDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

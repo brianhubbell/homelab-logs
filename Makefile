@@ -1,7 +1,7 @@
 .PHONY: build build-linux-amd64 build-linux-arm64 build-linux-armv7 build-darwin-arm64 build-all test clean \
        deploy deploy-gigantic deploy-pipvs deploy-piforza deploy-mini deploy-FH97NV255C
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --always 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X main.Version=$(VERSION)"
 
 build:

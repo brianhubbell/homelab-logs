@@ -18,11 +18,8 @@ type Config struct {
 	HealthPort          int
 	MetricsInterval     int
 	Debug               bool
-	DeployEnabled       bool
-	DeployDir           string
-	AutoUpdateEnabled   bool
-	AutoUpdateRepo      string
-	AutoUpdateInterval  int
+	DeployDir          string
+	AutoUpdateInterval int
 }
 
 // Load reads configuration from environment variables.
@@ -44,10 +41,7 @@ func Load() (*Config, error) {
 		HealthPort:      9110,
 		MetricsInterval: 60,
 		Debug:           goutils.StrToBool(os.Getenv("DEBUG")),
-		DeployEnabled:   goutils.StrToBool(os.Getenv("DEPLOY_ENABLED")),
-		DeployDir:       envOrDefault("DEPLOY_DIR", "/opt/homelab-services"),
-		AutoUpdateEnabled:  goutils.StrToBool(os.Getenv("AUTO_UPDATE_ENABLED")),
-		AutoUpdateRepo:     os.Getenv("AUTO_UPDATE_REPO"),
+		DeployDir:          envOrDefault("DEPLOY_DIR", "/opt/homelab-services"),
 		AutoUpdateInterval: 3600,
 	}
 
@@ -79,7 +73,28 @@ func Load() (*Config, error) {
 		cfg.AutoUpdateInterval = n
 	}
 
+	// Apply persisted overrides (from config.set commands).
+	// Overrides take precedence since they represent explicit user changes.
+	overrides, err := LoadOverrides()
+	if err != nil {
+		goutils.Err("loading config overrides", "error", err)
+	} else {
+		applyOverrides(cfg, overrides)
+	}
+
 	return cfg, nil
+}
+
+// applyOverrides applies persisted key-value overrides to the config.
+func applyOverrides(cfg *Config, overrides map[string]string) {
+	for key, value := range overrides {
+		switch key {
+		case "auto_update_interval":
+			if n, err := strconv.Atoi(value); err == nil && n > 0 {
+				cfg.AutoUpdateInterval = n
+			}
+		}
+	}
 }
 
 func envOrDefault(key, fallback string) string {

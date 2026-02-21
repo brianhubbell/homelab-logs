@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"homelab-agent/internal/config"
+
+	goutils "github.com/brianhubbell/go-utils"
 )
 
 func parseBool(s string) bool {
@@ -32,21 +36,23 @@ type Response struct {
 type Executor struct {
 	allowedServices     map[string]bool
 	allowedComposePaths map[string]bool
-	DeployEnabled       bool
-	DeployDir           string
-	AutoUpdateEnabled   bool
-	AutoUpdateRepo      string
-	AutoUpdateInterval  int
+	DeployDir          string
+	AutoUpdateInterval int
 	OnWhitelistChange   func([]string)
 	OnConfigChange      func(key, value string)
 	CurrentVersion      string
+
+	// AutoUpdateIntervalChanged is signalled when the auto_update_interval is
+	// changed via config.set so the ticker goroutine can reset itself.
+	AutoUpdateIntervalChanged chan struct{}
 }
 
 // New creates an Executor with the given allowed services and compose paths.
 func New(services []string, composePaths []string) *Executor {
 	e := &Executor{
-		allowedServices:     make(map[string]bool),
-		allowedComposePaths: make(map[string]bool),
+		allowedServices:           make(map[string]bool),
+		allowedComposePaths:       make(map[string]bool),
+		AutoUpdateIntervalChanged: make(chan struct{}, 1),
 	}
 	for _, s := range services {
 		e.allowedServices[s] = true
@@ -140,11 +146,6 @@ func (e *Executor) Execute(req Request) Response {
 		resp.Data = data
 
 	case "service.deploy":
-		if !e.DeployEnabled {
-			resp.Status = "error"
-			resp.Error = "deploy functionality is not enabled"
-			return resp
-		}
 		data, err := e.serviceDeploy(req.Args)
 		if err != nil {
 			resp.Status = "error"
@@ -158,11 +159,6 @@ func (e *Executor) Execute(req Request) Response {
 		}
 
 	case "agent.update":
-		if !e.DeployEnabled {
-			resp.Status = "error"
-			resp.Error = "deploy functionality is not enabled"
-			return resp
-		}
 		data, err := e.SelfUpdate()
 		if err != nil {
 			resp.Status = "error"
@@ -185,10 +181,7 @@ func (e *Executor) Execute(req Request) Response {
 	case "config.get":
 		resp.Status = "ok"
 		resp.Data = map[string]interface{}{
-			"deploy_enabled":       e.DeployEnabled,
 			"deploy_dir":           e.DeployDir,
-			"auto_update_enabled":  e.AutoUpdateEnabled,
-			"auto_update_repo":     e.AutoUpdateRepo,
 			"auto_update_interval": e.AutoUpdateInterval,
 		}
 
@@ -201,12 +194,6 @@ func (e *Executor) Execute(req Request) Response {
 			return resp
 		}
 		switch key {
-		case "deploy_enabled":
-			e.DeployEnabled = parseBool(value)
-		case "auto_update_enabled":
-			e.AutoUpdateEnabled = parseBool(value)
-		case "auto_update_repo":
-			e.AutoUpdateRepo = value
 		case "auto_update_interval":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				e.AutoUpdateInterval = n
@@ -222,6 +209,20 @@ func (e *Executor) Execute(req Request) Response {
 		}
 		resp.Status = "ok"
 		resp.Data = map[string]interface{}{"key": key, "value": value}
+
+		// Persist the change to disk so it survives restarts.
+		if err := config.SaveOverride(key, value); err != nil {
+			goutils.Err("persisting config override", "key", key, "error", err)
+		}
+
+		// Signal the auto-update goroutine if interval changed.
+		if key == "auto_update_interval" {
+			select {
+			case e.AutoUpdateIntervalChanged <- struct{}{}:
+			default:
+			}
+		}
+
 		if e.OnConfigChange != nil {
 			e.OnConfigChange(key, value)
 		}

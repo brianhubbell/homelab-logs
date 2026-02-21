@@ -44,7 +44,7 @@ func run() {
 		"broker", cfg.MQTTBroker, "prefix", cfg.TopicPrefix,
 		"services", cfg.AllowedServices, "composePaths", cfg.AllowedComposePaths,
 		"metricsInterval", cfg.MetricsInterval, "healthPort", cfg.HealthPort,
-		"deployEnabled", cfg.DeployEnabled, "deployDir", cfg.DeployDir)
+		"deployDir", cfg.DeployDir)
 
 	// 2. Resolve hostname
 	fullHostname, err := os.Hostname()
@@ -61,10 +61,7 @@ func run() {
 	met.Info = health.HealthInfo{
 		Version:            Version,
 		Hostname:           hostname,
-		AutoUpdateEnabled:  cfg.AutoUpdateEnabled,
-		AutoUpdateRepo:     cfg.AutoUpdateRepo,
 		AutoUpdateInterval: cfg.AutoUpdateInterval,
-		DeployEnabled:      cfg.DeployEnabled,
 		DeployDir:          cfg.DeployDir,
 	}
 	met.Start(cfg.HealthPort)
@@ -80,12 +77,16 @@ func run() {
 	if hostType == "" {
 		hostType = "physical"
 	}
+	address := os.Getenv("AGENT_ADDRESS")
+	if address == "" {
+		address = hostname + ".lan"
+	}
 	nodeConfig := map[string]interface{}{
 		"hostname":            hostname,
 		"label":               hostname,
 		"type":                "agent",
 		"host_type":           hostType,
-		"address":             hostname + ".lan",
+		"address":             address,
 		"port":                cfg.HealthPort,
 		"allowedServices":     cfg.AllowedServices,
 		"allowedComposePaths": cfg.AllowedComposePaths,
@@ -98,11 +99,8 @@ func run() {
 
 	// 6. Create executor
 	exec := executor.New(cfg.AllowedServices, cfg.AllowedComposePaths)
-	exec.DeployEnabled = cfg.DeployEnabled
 	exec.DeployDir = cfg.DeployDir
 	exec.CurrentVersion = Version
-	exec.AutoUpdateEnabled = cfg.AutoUpdateEnabled
-	exec.AutoUpdateRepo = cfg.AutoUpdateRepo
 	exec.AutoUpdateInterval = cfg.AutoUpdateInterval
 
 	// Add service versions to node config
@@ -149,18 +147,28 @@ func run() {
 		}
 	}
 
-	// 8b. Wire config change callback to update health info
+	// 8b. Wire config change callback to update health info and re-publish node config
 	exec.OnConfigChange = func(key, value string) {
 		met.Info = health.HealthInfo{
 			Version:            Version,
 			Hostname:           hostname,
-			AutoUpdateEnabled:  exec.AutoUpdateEnabled,
-			AutoUpdateRepo:     exec.AutoUpdateRepo,
 			AutoUpdateInterval: exec.AutoUpdateInterval,
-			DeployEnabled:      exec.DeployEnabled,
 			DeployDir:          exec.DeployDir,
 		}
 		goutils.Log("config updated via command", "key", key, "value", value)
+
+		// Re-publish node config so the control plane sees the change immediately.
+		nodeConfig["auto_update_interval"] = exec.AutoUpdateInterval
+		payload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
+		if err != nil {
+			goutils.Err("marshal updated node config after config.set", "error", err)
+			return
+		}
+		if err := client.PublishRetained(configTopic, payload); err != nil {
+			goutils.Err("publish updated node config after config.set", "error", err)
+		} else {
+			goutils.Log("published updated node config after config.set", "topic", configTopic, "key", key, "value", value)
+		}
 	}
 
 	// 9. Create handler and subscribe to command topic
@@ -181,6 +189,11 @@ func run() {
 					continue
 				}
 				data["host_type"] = hostType
+			data["health_endpoint"] = map[string]interface{}{
+				"host": address,
+				"port": cfg.HealthPort,
+				"path": "/health",
+			}
 				for k, v := range met.GetMetricsPayload() {
 					data[k] = v
 				}
@@ -196,22 +209,35 @@ func run() {
 		}()
 	}
 
-	// 11. Start auto-update ticker
-	if cfg.AutoUpdateEnabled && cfg.AutoUpdateRepo != "" {
+	// 11. Start auto-update goroutine with resettable timer
+	{
 		go func() {
-			ticker := time.NewTicker(time.Duration(cfg.AutoUpdateInterval) * time.Second)
-			defer ticker.Stop()
-			for range ticker.C {
-				goutils.Log("auto-update check starting")
-				result, err := exec.SelfUpdate()
-				if err != nil {
-					goutils.Err("auto-update failed", "error", err)
-					continue
+			timer := time.NewTimer(time.Duration(exec.AutoUpdateInterval) * time.Second)
+			defer timer.Stop()
+			for {
+				select {
+				case <-timer.C:
+					goutils.Log("auto-update check starting")
+					result, err := exec.SelfUpdate()
+					if err != nil {
+						goutils.Err("auto-update failed", "error", err)
+					} else {
+						goutils.Log("auto-update check complete", "result", result)
+					}
+					timer.Reset(time.Duration(exec.AutoUpdateInterval) * time.Second)
+				case <-exec.AutoUpdateIntervalChanged:
+					// Interval was changed via config.set — reset the timer.
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					goutils.Log("auto-update interval changed", "newInterval", exec.AutoUpdateInterval)
+					timer.Reset(time.Duration(exec.AutoUpdateInterval) * time.Second)
 				}
-				goutils.Log("auto-update check complete", "result", result)
 			}
 		}()
-		goutils.Log("auto-update enabled", "repo", cfg.AutoUpdateRepo, "interval", cfg.AutoUpdateInterval)
 	}
 
 	goutils.Log("homelab-agent ready", "hostname", hostname, "commandTopic", commandTopic)

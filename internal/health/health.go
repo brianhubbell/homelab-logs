@@ -17,10 +17,7 @@ type HealthInfo struct {
 	Version  string `json:"-"`
 	Hostname string `json:"-"`
 
-	AutoUpdateEnabled  bool   `json:"auto_update_enabled"`
-	AutoUpdateRepo     string `json:"auto_update_repo,omitempty"`
 	AutoUpdateInterval int    `json:"auto_update_interval"`
-	DeployEnabled      bool   `json:"deploy_enabled"`
 	DeployDir          string `json:"deploy_dir"`
 }
 

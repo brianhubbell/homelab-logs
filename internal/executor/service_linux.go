@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+func isServiceRunning(name string) bool {
+	cmd := exec.Command("systemctl", "is-active", name)
+	out, _ := cmd.Output()
+	return strings.TrimSpace(string(out)) == "active"
+}
+
 func serviceControl(service, op string) (map[string]interface{}, error) {
 	var cmd *exec.Cmd
 

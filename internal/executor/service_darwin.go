@@ -8,6 +8,20 @@ import (
 	"strings"
 )
 
+func isServiceRunning(name string) bool {
+	cmd := exec.Command("launchctl", "list")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func serviceControl(service, op string) (map[string]interface{}, error) {
 	label := "com." + service
 

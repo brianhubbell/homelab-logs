@@ -122,16 +122,6 @@ func (e *Executor) Execute(req Request) Response {
 		resp.Status = "ok"
 		resp.Data = data
 
-	case "service.deploy":
-		data, err := e.serviceDeploy(req.Args)
-		if err != nil {
-			resp.Status = "error"
-			resp.Error = err.Error()
-			return resp
-		}
-		resp.Status = "ok"
-		resp.Data = data
-
 	case "agent.update":
 		data, err := e.SelfUpdate()
 		if err != nil {

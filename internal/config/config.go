@@ -11,13 +11,12 @@ import (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	MQTTBroker          string
-	TopicPrefix         string
-	AllowedServices     []string
-	AllowedComposePaths []string
-	HealthPort          int
-	MetricsInterval     int
-	Debug               bool
+	MQTTBroker         string
+	TopicPrefix        string
+	Services           []string
+	HealthPort         int
+	MetricsInterval    int
+	Debug              bool
 	DeployDir          string
 	AutoUpdateInterval int
 }
@@ -29,24 +28,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MQTT_BROKER environment variable is required")
 	}
 
-	allowedRaw := os.Getenv("ALLOWED_SERVICES")
-	if allowedRaw == "" {
-		return nil, fmt.Errorf("ALLOWED_SERVICES environment variable is required")
-	}
-
 	cfg := &Config{
-		MQTTBroker:      broker,
-		TopicPrefix:     envOrDefault("TOPIC_PREFIX", "agent"),
-		AllowedServices: splitCSV(allowedRaw),
-		HealthPort:      9110,
-		MetricsInterval: 60,
-		Debug:           goutils.StrToBool(os.Getenv("DEBUG")),
+		MQTTBroker:         broker,
+		TopicPrefix:        envOrDefault("TOPIC_PREFIX", "agent"),
+		Services:           splitCSV(os.Getenv("SERVICES")),
+		HealthPort:         9110,
+		MetricsInterval:    60,
+		Debug:              goutils.StrToBool(os.Getenv("DEBUG")),
 		DeployDir:          envOrDefault("DEPLOY_DIR", "/opt/homelab-services"),
 		AutoUpdateInterval: 3600,
-	}
-
-	if v := os.Getenv("ALLOWED_COMPOSE_PATHS"); v != "" {
-		cfg.AllowedComposePaths = splitCSV(v)
 	}
 
 	if v := os.Getenv("HEALTH_PORT"); v != "" {

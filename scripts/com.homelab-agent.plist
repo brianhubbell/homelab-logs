@@ -14,8 +14,8 @@
         <string>gigantic.lan</string>
         <key>TOPIC_PREFIX</key>
         <string>agent</string>
-        <key>ALLOWED_SERVICES</key>
-        <string>__ALLOWED_SERVICES__</string>
+        <key>SERVICES</key>
+        <string>__SERVICES__</string>
         <key>DEPLOY_DIR</key>
         <string>__DEPLOY_DIR__</string>
         <key>HEALTH_PORT</key>

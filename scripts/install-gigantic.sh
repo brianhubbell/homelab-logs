@@ -36,8 +36,7 @@ mkdir -p /etc/homelab-agent
 cat > /etc/homelab-agent/env <<'EOF'
 MQTT_BROKER=gigantic.lan
 TOPIC_PREFIX=agent
-ALLOWED_SERVICES=govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt
-ALLOWED_COMPOSE_PATHS=/home/gigantic/homelab-services/redis-api/compose.yml,/home/gigantic/homelab-services/influx-api/compose.yml,/home/gigantic/homelab-services/mqtt-to-influxdb/compose.yml,/home/gigantic/homelab-services/berry-place-app/compose.yml,/home/gigantic/homelab-services/emporia-to-mqtt/compose.yml,/home/gigantic/homelab-services/docker-compose.yml,/home/gigantic/homelab-services/sunpower-to-mqtt/compose.yml,/home/gigantic/homelab-services/awair-to-mqtt/compose.yml
+SERVICES=govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt
 DEPLOY_DIR=/opt/homelab-services
 HEALTH_PORT=9110
 METRICS_INTERVAL_SECONDS=60

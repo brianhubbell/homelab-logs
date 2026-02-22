@@ -42,7 +42,7 @@ func run() {
 	}
 	goutils.Log("config loaded",
 		"broker", cfg.MQTTBroker, "prefix", cfg.TopicPrefix,
-		"services", cfg.AllowedServices, "composePaths", cfg.AllowedComposePaths,
+		"services", cfg.Services,
 		"healthPort", cfg.HealthPort, "deployDir", cfg.DeployDir)
 
 	// 2. Resolve hostname
@@ -82,30 +82,25 @@ func run() {
 		address = hostname + ".lan"
 	}
 	nodeConfig := map[string]interface{}{
-		"hostname":            hostname,
-		"label":               hostname,
-		"type":                "agent",
-		"host_type":           hostType,
-		"address":             address,
-		"port":                cfg.HealthPort,
-		"allowedServices":     cfg.AllowedServices,
-		"allowedComposePaths": cfg.AllowedComposePaths,
-		"version":             Version,
-	}
-	configPayload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
-	if err != nil {
-		log.Fatalf("marshal node config: %v", err)
+		"hostname":  hostname,
+		"label":     hostname,
+		"type":      "agent",
+		"host_type": hostType,
+		"address":   address,
+		"port":      cfg.HealthPort,
+		"services":  cfg.Services,
+		"version":   Version,
 	}
 
 	// 6. Create executor
-	exec := executor.New(cfg.AllowedServices, cfg.AllowedComposePaths)
+	exec := executor.New(cfg.Services)
 	exec.DeployDir = cfg.DeployDir
 	exec.CurrentVersion = Version
 	exec.AutoUpdateInterval = cfg.AutoUpdateInterval
 
 	// Add service versions to node config
 	nodeConfig["serviceVersions"] = exec.ServiceVersions()
-	configPayload, err = json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
+	configPayload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
 	if err != nil {
 		log.Fatalf("marshal node config: %v", err)
 	}
@@ -131,23 +126,7 @@ func run() {
 		log.Fatalf("MQTT: %v", err)
 	}
 
-	// 8. Wire whitelist change callback to re-publish node config
-	exec.OnWhitelistChange = func(services []string) {
-		nodeConfig["allowedServices"] = services
-		nodeConfig["serviceVersions"] = exec.ServiceVersions()
-		payload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
-		if err != nil {
-			goutils.Err("marshal updated node config", "error", err)
-			return
-		}
-		if err := client.PublishRetained(configTopic, payload); err != nil {
-			goutils.Err("publish updated node config", "error", err)
-		} else {
-			goutils.Log("published updated node config", "topic", configTopic, "allowedServices", services)
-		}
-	}
-
-	// 8b. Wire config change callback to update health info and re-publish node config
+	// 8. Wire config change callback to update health info and re-publish node config
 	exec.OnConfigChange = func(key, value string) {
 		met.Info = health.HealthInfo{
 			Version:            Version,

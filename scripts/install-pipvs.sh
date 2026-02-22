@@ -31,8 +31,7 @@ mkdir -p /etc/homelab-agent
 cat > /etc/homelab-agent/env <<'EOF'
 MQTT_BROKER=gigantic.lan
 TOPIC_PREFIX=agent
-ALLOWED_SERVICES=bt-to-mqtt,wifi-to-mqtt,haproxy,node_exporter
-ALLOWED_COMPOSE_PATHS=
+SERVICES=bt-to-mqtt,wifi-to-mqtt,haproxy,node_exporter
 DEPLOY_DIR=/opt/homelab-services
 HEALTH_PORT=9110
 METRICS_INTERVAL_SECONDS=60

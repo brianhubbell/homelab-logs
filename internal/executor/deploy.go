@@ -23,10 +23,10 @@ func (e *Executor) ServiceVersion(service string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// ServiceVersions returns a map of service name → version for all allowed services.
+// ServiceVersions returns a map of service name → version for configured services.
 func (e *Executor) ServiceVersions() map[string]string {
 	versions := make(map[string]string)
-	for svc := range e.allowedServices {
+	for _, svc := range e.Services {
 		if v := e.ServiceVersion(svc); v != "" {
 			versions[svc] = v
 		}
@@ -215,12 +215,6 @@ func (e *Executor) serviceDeploy(args map[string]string) (map[string]interface{}
 	}
 	steps = append(steps, map[string]interface{}{
 		"step": "enable_start", "status": "ok",
-	})
-
-	// 8. Add service to whitelist
-	e.allowedServices[service] = true
-	steps = append(steps, map[string]interface{}{
-		"step": "whitelist", "status": "ok",
 	})
 
 	results["steps"] = steps

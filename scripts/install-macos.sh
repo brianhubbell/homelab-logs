@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: bash install-macos.sh <DEPLOY_DIR> <ALLOWED_SERVICES>
-# Example: bash install-macos.sh /Volumes/dev "bt-to-mqtt,govee-to-mqtt"
+# Usage: bash install-macos.sh <DEPLOY_DIR> [SERVICES]
+# Example: bash install-macos.sh /Volumes/dev "bt-to-mqtt,wifi-to-mqtt"
 # No sudo required — installs as a user-level LaunchAgent.
 
-DEPLOY_DIR="${1:?Usage: bash install-macos.sh <DEPLOY_DIR> <ALLOWED_SERVICES>}"
-ALLOWED_SERVICES="${2:?Usage: bash install-macos.sh <DEPLOY_DIR> <ALLOWED_SERVICES>}"
+DEPLOY_DIR="${1:?Usage: bash install-macos.sh <DEPLOY_DIR> [SERVICES]}"
+SERVICES="${2:-}"
 
 REPO_DIR="${DEPLOY_DIR}/homelab-agent"
 BINARY="${REPO_DIR}/build/bin/homelab-agent"
@@ -34,7 +34,7 @@ mkdir -p "${HOME}/Library/Logs"
 mkdir -p "${HOME}/Library/LaunchAgents"
 sed \
     -e "s|__BINARY_PATH__|${BINARY}|g" \
-    -e "s|__ALLOWED_SERVICES__|${ALLOWED_SERVICES}|g" \
+    -e "s|__SERVICES__|${SERVICES}|g" \
     -e "s|__DEPLOY_DIR__|${DEPLOY_DIR}|g" \
     -e "s|__HOME__|${HOME}|g" \
     "${PLIST_TEMPLATE}" > "${PLIST_DEST}"

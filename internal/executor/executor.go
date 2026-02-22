@@ -32,15 +32,13 @@ type Response struct {
 	DurationMs int64                  `json:"duration_ms"`
 }
 
-// Executor dispatches commands with whitelist enforcement.
+// Executor dispatches commands.
 type Executor struct {
-	allowedServices     map[string]bool
-	allowedComposePaths map[string]bool
+	Services           []string
 	DeployDir          string
 	AutoUpdateInterval int
-	OnWhitelistChange   func([]string)
-	OnConfigChange      func(key, value string)
-	CurrentVersion      string
+	OnConfigChange     func(key, value string)
+	CurrentVersion     string
 
 	// AutoUpdateIntervalChanged is signalled when the auto_update_interval is
 	// changed via config.set so the ticker goroutine can reset itself.
@@ -52,33 +50,16 @@ type Executor struct {
 	ShutdownCh chan string
 }
 
-// New creates an Executor with the given allowed services and compose paths.
-func New(services []string, composePaths []string) *Executor {
-	e := &Executor{
-		allowedServices:           make(map[string]bool),
-		allowedComposePaths:       make(map[string]bool),
+// New creates an Executor.
+func New(services []string) *Executor {
+	return &Executor{
+		Services:                  services,
 		AutoUpdateIntervalChanged: make(chan struct{}, 1),
 		ShutdownCh:                make(chan string, 1),
 	}
-	for _, s := range services {
-		e.allowedServices[s] = true
-	}
-	for _, p := range composePaths {
-		e.allowedComposePaths[p] = true
-	}
-	return e
 }
 
-// AllowedServicesList returns the current allowed services as a sorted slice.
-func (e *Executor) AllowedServicesList() []string {
-	var list []string
-	for s := range e.allowedServices {
-		list = append(list, s)
-	}
-	return list
-}
-
-// Execute runs the given action with args, enforcing the whitelist.
+// Execute runs the given action with args.
 func (e *Executor) Execute(req Request) Response {
 	resp := Response{
 		ID:     req.ID,
@@ -97,11 +78,6 @@ func (e *Executor) Execute(req Request) Response {
 			resp.Error = "missing required arg: service"
 			return resp
 		}
-		if !e.allowedServices[svc] {
-			resp.Status = "error"
-			resp.Error = fmt.Sprintf("service %q not in whitelist", svc)
-			return resp
-		}
 		op := strings.TrimPrefix(req.Action, "service.")
 		data, err := serviceControl(svc, op)
 		if err != nil {
@@ -117,11 +93,6 @@ func (e *Executor) Execute(req Request) Response {
 		if path == "" {
 			resp.Status = "error"
 			resp.Error = "missing required arg: path"
-			return resp
-		}
-		if !e.allowedComposePaths[path] {
-			resp.Status = "error"
-			resp.Error = fmt.Sprintf("compose path %q not in whitelist", path)
 			return resp
 		}
 		svc := req.Args["service"] // optional: specific service within compose
@@ -160,9 +131,6 @@ func (e *Executor) Execute(req Request) Response {
 		}
 		resp.Status = "ok"
 		resp.Data = data
-		if e.OnWhitelistChange != nil {
-			e.OnWhitelistChange(e.AllowedServicesList())
-		}
 
 	case "agent.update":
 		data, err := e.SelfUpdate()

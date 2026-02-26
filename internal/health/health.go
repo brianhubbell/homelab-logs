@@ -98,6 +98,20 @@ func (s *Server) refreshSystemMetrics() {
 	s.systemMetricsMu.Unlock()
 }
 
+// GetSystemMetrics returns a copy of the cached system metrics map.
+func (s *Server) GetSystemMetrics() map[string]interface{} {
+	s.systemMetricsMu.RLock()
+	defer s.systemMetricsMu.RUnlock()
+	if s.cachedSystemMetrics == nil {
+		return nil
+	}
+	copy := make(map[string]interface{}, len(s.cachedSystemMetrics))
+	for k, v := range s.cachedSystemMetrics {
+		copy[k] = v
+	}
+	return copy
+}
+
 func (s *Server) GetMetricsPayload() map[string]interface{} {
 	return map[string]interface{}{
 		"uptime_seconds":    s.UptimeSeconds(),

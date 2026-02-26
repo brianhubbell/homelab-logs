@@ -31,8 +31,10 @@ func main() {
 }
 
 func run() {
-	// Set app metadata for watermarks
-	os.Setenv("APP_NAME", "homelab-agent")
+	// Set app metadata for watermarks (only if not already set by environment)
+	if os.Getenv("APP_NAME") == "" {
+		os.Setenv("APP_NAME", "homelab-agent")
+	}
 	os.Setenv("APP_VERSION", Version)
 
 	// 1. Load config
@@ -70,7 +72,7 @@ func run() {
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
 	commandTopic := fmt.Sprintf("control/%s/%s/command", cfg.TopicPrefix, hostname)
 	responseTopic := fmt.Sprintf("control/%s/%s/response", cfg.TopicPrefix, hostname)
-	heartbeatTopic := fmt.Sprintf("heartbeat/homelab-agent/%s", hostname)
+	heartbeatTopic := fmt.Sprintf("heartbeat/%s/%s", os.Getenv("APP_NAME"), hostname)
 
 	// 5. Build node config for self-registration
 	hostType := os.Getenv("HOST_TYPE")
@@ -162,8 +164,6 @@ func run() {
 		defer ticker.Stop()
 		for range ticker.C {
 			hb := map[string]interface{}{
-				"hostname":  hostname,
-				"host_type": hostType,
 				"health_endpoint": map[string]interface{}{
 					"host": address,
 					"port": cfg.HealthPort,
@@ -180,7 +180,28 @@ func run() {
 		}
 	}()
 
-	// 11. Start auto-update goroutine with resettable timer
+	// 11. Start metrics publishing goroutine
+	go func() {
+		metricsTopic := fmt.Sprintf("metrics/%s/%s", os.Getenv("APP_NAME"), hostname)
+		ticker := time.NewTicker(time.Duration(cfg.MetricsInterval) * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			sysMetrics := met.GetSystemMetrics()
+			if sysMetrics == nil {
+				continue
+			}
+			payload, err := json.Marshal(goutils.NewMessage(sysMetrics, nil, "metrics"))
+			if err != nil {
+				goutils.Debug("marshal metrics error", "error", err)
+				continue
+			}
+			if err := client.Publish(metricsTopic, payload); err != nil {
+				goutils.Debug("publish metrics error", "error", err)
+			}
+		}
+	}()
+
+	// 12. Start auto-update goroutine with resettable timer
 	{
 		go func() {
 			timer := time.NewTimer(time.Duration(exec.AutoUpdateInterval) * time.Second)
@@ -213,7 +234,7 @@ func run() {
 
 	goutils.Log("homelab-agent ready", "hostname", hostname, "commandTopic", commandTopic)
 
-	// 12. Signal handling for graceful shutdown
+	// 13. Signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 

@@ -33,6 +33,12 @@ func main() {
 func run() {
 	os.Setenv("SERVICE_NAME", "homelab-agent")
 	os.Setenv("SERVICE_VERSION", Version)
+	if os.Getenv("HOST_TYPE") == "" {
+		os.Setenv("HOST_TYPE", "physical")
+	}
+	if os.Getenv("SERVICE_TYPE") == "" {
+		os.Setenv("SERVICE_TYPE", "native")
+	}
 
 	// 1. Load config
 	cfg, err := config.Load()

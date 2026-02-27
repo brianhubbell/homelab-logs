@@ -5,11 +5,11 @@ import (
 	"time"
 
 	goutils "github.com/brianhubbell/go-utils"
+	"github.com/brianhubbell/go-utils/mqtt"
 	paho "github.com/eclipse/paho.mqtt.golang"
 
 	"homelab-agent/internal/executor"
 	"homelab-agent/internal/health"
-	"homelab-agent/internal/mqtt"
 )
 
 // Handler processes incoming MQTT commands, dispatches them to the executor,

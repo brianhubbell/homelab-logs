@@ -1,0 +1,173 @@
+package mqtt
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	goutils "github.com/brianhubbell/go-utils"
+	paho "github.com/eclipse/paho.mqtt.golang"
+)
+
+// Client wraps a Paho MQTT client with auto-reconnect, heartbeat, and metrics
+// publishing. It is the transport companion to goutils.Message / goutils.Watermark.
+type Client struct {
+	client   paho.Client
+	hostname string
+	started  time.Time
+	done     chan struct{}
+	once     sync.Once
+
+	mu        sync.RWMutex
+	connected bool
+	onStatus  func(bool)
+}
+
+// NewClient connects to the MQTT broker at the given address (host or host:port).
+// onStatus is called whenever the connection state changes.
+// onConnect is called after every (re)connect and receives the Client so the
+// caller can re-subscribe or publish retained config.
+func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Client, error) {
+	c := &Client{
+		hostname: shortHostname(),
+		started:  time.Now(),
+		done:     make(chan struct{}),
+		onStatus: onStatus,
+	}
+
+	opts := paho.NewClientOptions()
+	opts.AddBroker(fmt.Sprintf("tcp://%s:1883", broker))
+	opts.SetClientID(fmt.Sprintf("%s-%s", goutils.ServiceName(), c.hostname))
+	opts.SetAutoReconnect(true)
+	opts.SetConnectRetry(true)
+	opts.SetConnectRetryInterval(5 * time.Second)
+	opts.SetKeepAlive(30 * time.Second)
+
+	// LWT: offline heartbeat so the broker publishes it on ungraceful disconnect.
+	lwt := goutils.NewMessage(map[string]any{"status": "offline"}, nil, "heartbeat")
+	lwtData, _ := json.Marshal(lwt)
+	opts.SetWill(
+		fmt.Sprintf("heartbeat/%s/%s", goutils.ServiceName(), c.hostname),
+		string(lwtData), 0, true,
+	)
+
+	opts.SetOnConnectHandler(func(_ paho.Client) {
+		goutils.Log("mqtt connected", "broker", broker)
+		c.setConnected(true)
+		if onConnect != nil {
+			onConnect(c)
+		}
+	})
+	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
+		goutils.Err("mqtt connection lost", "error", err)
+		c.setConnected(false)
+	})
+	opts.SetReconnectingHandler(func(_ paho.Client, _ *paho.ClientOptions) {
+		goutils.Debug("mqtt reconnecting", "broker", broker)
+	})
+
+	c.client = paho.NewClient(opts)
+	token := c.client.Connect()
+	token.Wait()
+	if err := token.Error(); err != nil {
+		return nil, fmt.Errorf("mqtt connect to %s: %w", broker, err)
+	}
+
+	return c, nil
+}
+
+// Publish sends payload to the given topic with QoS 0 and retain=false.
+func (c *Client) Publish(topic string, payload []byte) error {
+	if !c.IsConnected() {
+		return fmt.Errorf("mqtt client not connected")
+	}
+	token := c.client.Publish(topic, 0, false, payload)
+	token.Wait()
+	return token.Error()
+}
+
+// PublishRetained sends payload to the given topic with QoS 0 and retain=true.
+func (c *Client) PublishRetained(topic string, payload []byte) error {
+	if !c.IsConnected() {
+		return fmt.Errorf("mqtt client not connected")
+	}
+	token := c.client.Publish(topic, 0, true, payload)
+	token.Wait()
+	return token.Error()
+}
+
+// Subscribe registers a handler for the given topic and QoS.
+func (c *Client) Subscribe(topic string, qos byte, handler paho.MessageHandler) error {
+	if !c.IsConnected() {
+		return fmt.Errorf("mqtt client not connected")
+	}
+	token := c.client.Subscribe(topic, qos, handler)
+	token.Wait()
+	return token.Error()
+}
+
+// IsConnected returns whether the client is currently connected to the broker.
+func (c *Client) IsConnected() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.connected
+}
+
+// Hostname returns the short hostname used in topic paths.
+func (c *Client) Hostname() string {
+	return c.hostname
+}
+
+// UptimeSeconds returns the number of seconds since the client was created.
+func (c *Client) UptimeSeconds() int64 {
+	return int64(time.Since(c.started).Seconds())
+}
+
+// Done returns a channel that is closed when Stop is called.
+func (c *Client) Done() <-chan struct{} {
+	return c.done
+}
+
+// Stop gracefully shuts down the client. It is safe to call multiple times.
+// It closes the done channel (stopping heartbeat/metrics goroutines), publishes
+// a final offline heartbeat, and disconnects from the broker.
+func (c *Client) Stop() {
+	c.once.Do(func() {
+		close(c.done)
+		c.publishOfflineHeartbeat()
+		c.client.Disconnect(1000)
+		c.setConnected(false)
+	})
+}
+
+func (c *Client) publishOfflineHeartbeat() {
+	envelope := goutils.NewMessage(map[string]any{"status": "offline"}, nil, "heartbeat")
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		return
+	}
+	topic := fmt.Sprintf("heartbeat/%s/%s", goutils.ServiceName(), c.hostname)
+	token := c.client.Publish(topic, 0, true, data)
+	token.Wait()
+}
+
+func (c *Client) setConnected(connected bool) {
+	c.mu.Lock()
+	c.connected = connected
+	cb := c.onStatus
+	c.mu.Unlock()
+	if cb != nil {
+		cb(connected)
+	}
+}
+
+func shortHostname() string {
+	hostname, _ := os.Hostname()
+	if idx := strings.Index(hostname, "."); idx != -1 {
+		hostname = hostname[:idx]
+	}
+	return hostname
+}

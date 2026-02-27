@@ -6,6 +6,14 @@ Go equivalent of [`@brianhubbell/node-utils`](https://github.com/brianhubbell/no
 
 ## Install
 
+This is a private module. Configure Go to bypass the public proxy:
+
+```bash
+go env -w GOPRIVATE=github.com/brianhubbell/*
+```
+
+Then install:
+
 ```bash
 go get github.com/brianhubbell/go-utils
 ```

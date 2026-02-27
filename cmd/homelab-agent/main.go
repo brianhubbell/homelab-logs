@@ -11,12 +11,12 @@ import (
 	"time"
 
 	goutils "github.com/brianhubbell/go-utils"
+	"github.com/brianhubbell/go-utils/mqtt"
 
 	"homelab-agent/internal/config"
 	"homelab-agent/internal/executor"
 	"homelab-agent/internal/handler"
 	"homelab-agent/internal/health"
-	"homelab-agent/internal/mqtt"
 )
 
 // Version is injected at build time via ldflags.
@@ -31,13 +31,9 @@ func main() {
 }
 
 func run() {
-	os.Setenv("SERVICE_NAME", "homelab-agent")
-	os.Setenv("SERVICE_VERSION", Version)
+	goutils.SetService("homelab-agent", Version)
 	if os.Getenv("HOST_TYPE") == "" {
 		os.Setenv("HOST_TYPE", "physical")
-	}
-	if os.Getenv("SERVICE_TYPE") == "" {
-		os.Setenv("SERVICE_TYPE", "native")
 	}
 
 	// 1. Load config
@@ -73,7 +69,6 @@ func run() {
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
 	commandTopic := fmt.Sprintf("control/%s/%s/command", cfg.TopicPrefix, hostname)
 	responseTopic := fmt.Sprintf("control/%s/%s/response", cfg.TopicPrefix, hostname)
-	heartbeatTopic := fmt.Sprintf("heartbeat/homelab-agent/%s", hostname)
 
 	// 5. Build node config for self-registration
 	hostType := os.Getenv("HOST_TYPE")
@@ -119,7 +114,7 @@ func run() {
 			goutils.Log("published node config", "topic", configTopic)
 		}
 		if h != nil {
-			if err := c.Subscribe(commandTopic, h.HandleMessage); err != nil {
+			if err := c.Subscribe(commandTopic, 1, h.HandleMessage); err != nil {
 				goutils.Err("subscribe command topic", "error", err)
 			}
 		}
@@ -127,6 +122,7 @@ func run() {
 	if err != nil {
 		log.Fatalf("MQTT: %v", err)
 	}
+	defer client.Stop()
 
 	// 8. Wire config change callback to update health info and re-publish node config
 	exec.OnConfigChange = func(key, value string) {
@@ -154,48 +150,17 @@ func run() {
 
 	// 9. Create handler and subscribe to command topic
 	h = handler.New(exec, client, met, responseTopic)
-	if err := client.Subscribe(commandTopic, h.HandleMessage); err != nil {
+	if err := client.Subscribe(commandTopic, 1, h.HandleMessage); err != nil {
 		log.Fatalf("subscribe command topic: %v", err)
 	}
 
-	// 10. Start heartbeat ticker (10s) for discovery and liveness
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			hb := map[string]interface{}{
-				"uptime_seconds": met.UptimeSeconds(),
-			}
-			payload, err := json.Marshal(goutils.NewMessage(hb, nil, "heartbeat"))
-			if err != nil {
-				continue
-			}
-			if err := client.Publish(heartbeatTopic, payload); err != nil {
-				goutils.Debug("publish heartbeat error", "error", err)
-			}
-		}
-	}()
+	// 10. Start heartbeat (10s) for discovery and liveness
+	client.StartHeartbeat(10 * time.Second)
 
-	// 11. Start metrics publishing goroutine
-	go func() {
-		metricsTopic := fmt.Sprintf("metrics/homelab-agent/%s", hostname)
-		ticker := time.NewTicker(time.Duration(cfg.MetricsInterval) * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			sysMetrics := met.GetSystemMetrics()
-			if sysMetrics == nil {
-				continue
-			}
-			payload, err := json.Marshal(goutils.NewMessage(sysMetrics, nil, "metrics"))
-			if err != nil {
-				goutils.Debug("marshal metrics error", "error", err)
-				continue
-			}
-			if err := client.Publish(metricsTopic, payload); err != nil {
-				goutils.Debug("publish metrics error", "error", err)
-			}
-		}
-	}()
+	// 11. Start metrics publishing via shared mqtt client
+	client.StartMetrics(time.Duration(cfg.MetricsInterval)*time.Second, func(_ int64) any {
+		return met.GetSystemMetrics() // returns nil when not yet available, skipping the tick
+	})
 
 	// 12. Start auto-update goroutine with resettable timer
 	{
@@ -248,7 +213,7 @@ func run() {
 	} else {
 		goutils.Log("cleared node config", "topic", configTopic)
 	}
-	client.Disconnect()
+	// client.Stop() is called via defer above.
 	goutils.Log("goodbye")
 	os.Exit(0)
 }

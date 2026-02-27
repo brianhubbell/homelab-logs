@@ -148,10 +148,10 @@ func run() {
 		}
 	}
 
-	// 9. Create handler and subscribe to command topic
+	// 9. Create handler — subscribe now if connected, otherwise onConnect callback handles it
 	h = handler.New(exec, client, met, responseTopic)
 	if err := client.Subscribe(commandTopic, 1, h.HandleMessage); err != nil {
-		log.Fatalf("subscribe command topic: %v", err)
+		goutils.Log("initial subscribe deferred to onConnect", "reason", err)
 	}
 
 	// 10. Start heartbeat (10s) for discovery and liveness

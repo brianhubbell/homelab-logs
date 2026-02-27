@@ -38,7 +38,6 @@ MQTT_BROKER=gigantic.lan
 TOPIC_PREFIX=agent
 SERVICES=govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt
 DEPLOY_DIR=/opt/homelab-services
-HEALTH_PORT=9110
 METRICS_INTERVAL_SECONDS=60
 DEBUG=false
 EOF

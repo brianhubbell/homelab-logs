@@ -44,8 +44,7 @@ func run() {
 	}
 	goutils.Log("config loaded",
 		"broker", cfg.MQTTBroker, "prefix", cfg.TopicPrefix,
-		"services", cfg.Services,
-		"healthPort", cfg.HealthPort, "deployDir", cfg.DeployDir)
+		"services", cfg.Services, "deployDir", cfg.DeployDir)
 
 	// 2. Resolve hostname
 	fullHostname, err := os.Hostname()
@@ -66,7 +65,6 @@ func run() {
 		DeployDir:          cfg.DeployDir,
 	}
 	met.SetMetricsCollector(executor.SystemMetrics)
-	met.Start(cfg.HealthPort)
 
 	// 4. Build MQTT topics
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
@@ -89,7 +87,6 @@ func run() {
 		"type":      "agent",
 		"host_type": hostType,
 		"address":   address,
-		"port":      cfg.HealthPort,
 		"services":  cfg.Services,
 		"version":   Version,
 	}
@@ -164,11 +161,7 @@ func run() {
 		defer ticker.Stop()
 		for range ticker.C {
 			hb := map[string]interface{}{
-				"health_endpoint": map[string]interface{}{
-					"host": address,
-					"port": cfg.HealthPort,
-					"path": "/health",
-				},
+				"uptime_seconds": met.UptimeSeconds(),
 			}
 			payload, err := json.Marshal(goutils.NewMessage(hb, nil, "heartbeat"))
 			if err != nil {

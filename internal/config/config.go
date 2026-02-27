@@ -14,7 +14,6 @@ type Config struct {
 	MQTTBroker         string
 	TopicPrefix        string
 	Services           []string
-	HealthPort         int
 	MetricsInterval    int
 	Debug              bool
 	DeployDir          string
@@ -32,19 +31,10 @@ func Load() (*Config, error) {
 		MQTTBroker:         broker,
 		TopicPrefix:        envOrDefault("TOPIC_PREFIX", "agent"),
 		Services:           splitCSV(os.Getenv("SERVICES")),
-		HealthPort:         9110,
 		MetricsInterval:    60,
 		Debug:              goutils.StrToBool(os.Getenv("DEBUG")),
 		DeployDir:          envOrDefault("DEPLOY_DIR", "/opt/homelab-services"),
 		AutoUpdateInterval: 3600,
-	}
-
-	if v := os.Getenv("HEALTH_PORT"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid HEALTH_PORT %q: %w", v, err)
-		}
-		cfg.HealthPort = n
 	}
 
 	if v := os.Getenv("METRICS_INTERVAL_SECONDS"); v != "" {

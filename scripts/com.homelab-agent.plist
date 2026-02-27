@@ -18,9 +18,7 @@
         <string>__SERVICES__</string>
         <key>DEPLOY_DIR</key>
         <string>__DEPLOY_DIR__</string>
-        <key>HEALTH_PORT</key>
-        <string>9110</string>
-        <key>METRICS_INTERVAL_SECONDS</key>
+<key>METRICS_INTERVAL_SECONDS</key>
         <string>60</string>
         <key>DEBUG</key>
         <string>false</string>

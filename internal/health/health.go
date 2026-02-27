@@ -1,11 +1,7 @@
 package health
 
 import (
-	"encoding/json"
-	"fmt"
 	"math"
-	"net/http"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,11 +27,6 @@ type Server struct {
 	commandsRecv  atomic.Int64
 	commandsExec  atomic.Int64
 	commandsFail  atomic.Int64
-
-	// HTTP endpoint metrics
-	httpRequests  atomic.Int64
-	httpErrors    atomic.Int64
-	httpLatencyNs atomic.Int64 // cumulative nanoseconds
 
 	// Cached system metrics, refreshed in background
 	systemMetricsMu     sync.RWMutex
@@ -122,69 +113,3 @@ func (s *Server) GetMetricsPayload() map[string]interface{} {
 	}
 }
 
-func (s *Server) Start(port int) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", s.healthHandler)
-
-	server := &http.Server{
-		Addr:    fmt.Sprintf("0.0.0.0:%d", port),
-		Handler: mux,
-	}
-
-	go func() {
-		goutils.Log("health server listening", "port", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			goutils.Err("health server error", "error", err)
-		}
-	}()
-}
-
-func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	s.httpRequests.Add(1)
-
-	w.Header().Set("Content-Type", "application/json")
-
-	totalReqs := s.httpRequests.Load()
-	totalLatency := s.httpLatencyNs.Load()
-	var avgLatencyMs float64
-	if totalReqs > 1 {
-		avgLatencyMs = float64(totalLatency) / float64(totalReqs-1) / 1e6
-	}
-
-	health := map[string]interface{}{
-		"status":            http.StatusOK,
-		"version":           s.Info.Version,
-		"hostname":          s.Info.Hostname,
-		"os":                runtime.GOOS,
-		"arch":              runtime.GOARCH,
-		"go_version":        runtime.Version(),
-		"mqtt_connected":    s.mqttConnected.Load(),
-		"uptime_seconds":    s.UptimeSeconds(),
-		"num_goroutine":     runtime.NumGoroutine(),
-		"config":            s.Info,
-		"commands_received": s.commandsRecv.Load(),
-		"commands_executed": s.commandsExec.Load(),
-		"commands_failed":   s.commandsFail.Load(),
-		"http": map[string]interface{}{
-			"requests_total":   totalReqs,
-			"errors_total":     s.httpErrors.Load(),
-			"avg_latency_ms":   avgLatencyMs,
-		},
-	}
-
-	// Merge cached system metrics
-	s.systemMetricsMu.RLock()
-	sysMetrics := s.cachedSystemMetrics
-	s.systemMetricsMu.RUnlock()
-	if sysMetrics != nil {
-		health["system"] = sysMetrics
-	}
-
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(health); err != nil {
-		s.httpErrors.Add(1)
-	}
-
-	s.httpLatencyNs.Add(time.Since(start).Nanoseconds())
-}

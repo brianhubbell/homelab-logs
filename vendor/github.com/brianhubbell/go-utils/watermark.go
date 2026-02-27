@@ -10,8 +10,8 @@ type Watermark struct {
 	Timestamp  int64      `json:"timestamp"`
 	Hostname   string     `json:"hostname"`
 	Type       string     `json:"type,omitempty"`
-	AppName    string     `json:"appName,omitempty"`
-	AppVersion string     `json:"appVersion,omitempty"`
+	ServiceName    string `json:"serviceName,omitempty"`
+	ServiceVersion string `json:"serviceVersion,omitempty"`
 	Watermark  *Watermark `json:"watermark,omitempty"`
 }
 
@@ -27,11 +27,11 @@ func NewWatermark(existing *Watermark, typ string) *Watermark {
 	if typ != "" {
 		w.Type = typ
 	}
-	if name := os.Getenv("APP_NAME"); name != "" {
-		w.AppName = name
+	if name := os.Getenv("SERVICE_NAME"); name != "" {
+		w.ServiceName = name
 	}
-	if version := os.Getenv("APP_VERSION"); version != "" {
-		w.AppVersion = version
+	if version := os.Getenv("SERVICE_VERSION"); version != "" {
+		w.ServiceVersion = version
 	}
 	if existing != nil {
 		w.Watermark = existing

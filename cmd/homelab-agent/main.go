@@ -31,11 +31,8 @@ func main() {
 }
 
 func run() {
-	// Set app metadata for watermarks (only if not already set by environment)
-	if os.Getenv("APP_NAME") == "" {
-		os.Setenv("APP_NAME", "homelab-agent")
-	}
-	os.Setenv("APP_VERSION", Version)
+	os.Setenv("SERVICE_NAME", "homelab-agent")
+	os.Setenv("SERVICE_VERSION", Version)
 
 	// 1. Load config
 	cfg, err := config.Load()
@@ -70,7 +67,7 @@ func run() {
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
 	commandTopic := fmt.Sprintf("control/%s/%s/command", cfg.TopicPrefix, hostname)
 	responseTopic := fmt.Sprintf("control/%s/%s/response", cfg.TopicPrefix, hostname)
-	heartbeatTopic := fmt.Sprintf("heartbeat/%s/%s", os.Getenv("APP_NAME"), hostname)
+	heartbeatTopic := fmt.Sprintf("heartbeat/homelab-agent/%s", hostname)
 
 	// 5. Build node config for self-registration
 	hostType := os.Getenv("HOST_TYPE")
@@ -175,7 +172,7 @@ func run() {
 
 	// 11. Start metrics publishing goroutine
 	go func() {
-		metricsTopic := fmt.Sprintf("metrics/%s/%s", os.Getenv("APP_NAME"), hostname)
+		metricsTopic := fmt.Sprintf("metrics/homelab-agent/%s", hostname)
 		ticker := time.NewTicker(time.Duration(cfg.MetricsInterval) * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {

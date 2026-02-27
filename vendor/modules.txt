@@ -1,6 +1,7 @@
 # github.com/brianhubbell/go-utils v0.1.0
 ## explicit; go 1.24
 github.com/brianhubbell/go-utils
+github.com/brianhubbell/go-utils/mqtt
 # github.com/ebitengine/purego v0.8.1
 ## explicit; go 1.18
 github.com/ebitengine/purego

@@ -1,3 +1,7 @@
+github.com/brianhubbell/go-utils v0.4.0 h1:OiCdS55qxv4g+xOFIUlumP03JBjoGOGePFgZXuYKjtQ=
+github.com/brianhubbell/go-utils v0.4.0/go.mod h1:d8lPvywq8MuNq5QsK+N0tw7JgXuBmtweluqbpxI0Ndo=
+github.com/brianhubbell/go-utils v0.5.0 h1:tzvJp0O5MP5+v7Phizz9wYNszT6oIe1cHvLAz+yXJu0=
+github.com/brianhubbell/go-utils v0.5.0/go.mod h1:d8lPvywq8MuNq5QsK+N0tw7JgXuBmtweluqbpxI0Ndo=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/ebitengine/purego v0.8.1 h1:sdRKd6plj7KYW33EH5As6YKfe8m9zbN9JMrOjNVF/BE=

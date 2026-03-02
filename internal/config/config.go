@@ -73,6 +73,14 @@ func applyOverrides(cfg *Config, overrides map[string]string) {
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				cfg.AutoUpdateInterval = n
 			}
+		case "metrics_interval":
+			if n, err := strconv.Atoi(value); err == nil && n > 0 {
+				cfg.MetricsInterval = n
+			}
+		case "deploy_dir":
+			if value != "" {
+				cfg.DeployDir = value
+			}
 		}
 	}
 }

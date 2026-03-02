@@ -12,6 +12,7 @@ import (
 
 	goutils "github.com/brianhubbell/go-utils"
 	"github.com/brianhubbell/go-utils/mqtt"
+	paho "github.com/eclipse/paho.mqtt.golang"
 
 	"homelab-agent/internal/config"
 	"homelab-agent/internal/executor"
@@ -69,6 +70,7 @@ func run() {
 	configTopic := fmt.Sprintf("control/%s/%s/config", cfg.TopicPrefix, hostname)
 	commandTopic := fmt.Sprintf("control/%s/%s/command", cfg.TopicPrefix, hostname)
 	responseTopic := fmt.Sprintf("control/%s/%s/response", cfg.TopicPrefix, hostname)
+	desiredStateTopic := fmt.Sprintf("control/%s/%s/desired_state", cfg.TopicPrefix, hostname)
 
 	// 5. Build node config for self-registration
 	hostType := os.Getenv("HOST_TYPE")
@@ -102,6 +104,18 @@ func run() {
 		log.Fatalf("marshal node config: %v", err)
 	}
 
+	// desiredStateHandler applies a retained desired-state payload on connect.
+	desiredStateHandler := func(_ paho.Client, msg paho.Message) {
+		var envelope goutils.Message[map[string]string]
+		if err := json.Unmarshal(msg.Payload(), &envelope); err != nil {
+			goutils.Err("desired_state: unmarshal", "error", err)
+			return
+		}
+		if errs := exec.ApplyDesiredState(envelope.Payload); len(errs) > 0 {
+			goutils.Err("desired_state: some keys failed", "errors", errs)
+		}
+	}
+
 	// 7. Connect MQTT
 	var h *handler.Handler
 	client, err := mqtt.NewClient(cfg.MQTTBroker, func(connected bool) {
@@ -117,6 +131,9 @@ func run() {
 			if err := c.Subscribe(commandTopic, 1, h.HandleMessage); err != nil {
 				goutils.Err("subscribe command topic", "error", err)
 			}
+		}
+		if err := c.Subscribe(desiredStateTopic, 1, desiredStateHandler); err != nil {
+			goutils.Err("subscribe desired_state topic", "error", err)
 		}
 	})
 	if err != nil {
@@ -153,11 +170,11 @@ func run() {
 	if err := client.Subscribe(commandTopic, 1, h.HandleMessage); err != nil {
 		goutils.Log("initial subscribe deferred to onConnect", "reason", err)
 	}
+	if err := client.Subscribe(desiredStateTopic, 1, desiredStateHandler); err != nil {
+		goutils.Log("desired_state subscribe deferred to onConnect", "reason", err)
+	}
 
-	// 10. Start heartbeat (10s) for discovery and liveness
-	client.StartHeartbeat(10 * time.Second)
-
-	// 11. Start metrics publishing via shared mqtt client
+	// 10. Start metrics publishing via shared mqtt client
 	client.StartMetrics(time.Duration(cfg.MetricsInterval)*time.Second, func(_ int64) any {
 		return met.GetSystemMetrics() // returns nil when not yet available, skipping the tick
 	})

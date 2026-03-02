@@ -3,7 +3,7 @@ module homelab-agent
 go 1.24.0
 
 require (
-	github.com/brianhubbell/go-utils v0.1.0
+	github.com/brianhubbell/go-utils v0.5.0
 	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/shirou/gopsutil/v4 v4.24.11
 )

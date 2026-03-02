@@ -43,7 +43,6 @@ type Watermark struct {
 	Timestamp      int64      `json:"timestamp"`
 	Hostname       string     `json:"hostname"`
 	Type           string     `json:"type,omitempty"`
-	HostType       string     `json:"hostType,omitempty"`
 	ServiceName    string     `json:"serviceName,omitempty"`
 	ServiceVersion string     `json:"serviceVersion,omitempty"`
 	Watermark      *Watermark `json:"watermark,omitempty"`
@@ -66,9 +65,6 @@ func NewWatermark(existing *Watermark, typ string) *Watermark {
 	}
 	if typ != "" {
 		w.Type = typ
-	}
-	if ht := os.Getenv("HOST_TYPE"); ht != "" {
-		w.HostType = ht
 	}
 	if name := ServiceName(); name != "" {
 		w.ServiceName = name

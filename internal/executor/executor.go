@@ -37,6 +37,7 @@ type Executor struct {
 	Services           []string
 	DeployDir          string
 	AutoUpdateInterval int
+	MetricsInterval    int
 	OnConfigChange     func(key, value string)
 	CurrentVersion     string
 
@@ -147,6 +148,7 @@ func (e *Executor) Execute(req Request) Response {
 		resp.Data = map[string]interface{}{
 			"deploy_dir":           e.DeployDir,
 			"auto_update_interval": e.AutoUpdateInterval,
+			"metrics_interval":     e.MetricsInterval,
 		}
 
 	case "config.set":
@@ -157,39 +159,13 @@ func (e *Executor) Execute(req Request) Response {
 			resp.Error = "missing required arg: key"
 			return resp
 		}
-		switch key {
-		case "auto_update_interval":
-			if n, err := strconv.Atoi(value); err == nil && n > 0 {
-				e.AutoUpdateInterval = n
-			} else {
-				resp.Status = "error"
-				resp.Error = fmt.Sprintf("invalid interval %q", value)
-				return resp
-			}
-		default:
+		if err := e.applyConfigKey(key, value); err != nil {
 			resp.Status = "error"
-			resp.Error = fmt.Sprintf("unknown config key %q", key)
+			resp.Error = err.Error()
 			return resp
 		}
 		resp.Status = "ok"
 		resp.Data = map[string]interface{}{"key": key, "value": value}
-
-		// Persist the change to disk so it survives restarts.
-		if err := config.SaveOverride(key, value); err != nil {
-			goutils.Err("persisting config override", "key", key, "error", err)
-		}
-
-		// Signal the auto-update goroutine if interval changed.
-		if key == "auto_update_interval" {
-			select {
-			case e.AutoUpdateIntervalChanged <- struct{}{}:
-			default:
-			}
-		}
-
-		if e.OnConfigChange != nil {
-			e.OnConfigChange(key, value)
-		}
 
 	default:
 		resp.Status = "error"
@@ -197,4 +173,56 @@ func (e *Executor) Execute(req Request) Response {
 	}
 
 	return resp
+}
+
+// applyConfigKey validates, applies, persists, and notifies a single config change.
+func (e *Executor) applyConfigKey(key, value string) error {
+	switch key {
+	case "auto_update_interval":
+		n, err := strconv.Atoi(value)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("invalid interval %q", value)
+		}
+		e.AutoUpdateInterval = n
+		select {
+		case e.AutoUpdateIntervalChanged <- struct{}{}:
+		default:
+		}
+	case "metrics_interval":
+		n, err := strconv.Atoi(value)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("invalid interval %q", value)
+		}
+		e.MetricsInterval = n
+	case "deploy_dir":
+		if value == "" {
+			return fmt.Errorf("deploy_dir cannot be empty")
+		}
+		e.DeployDir = value
+	default:
+		return fmt.Errorf("unknown config key %q", key)
+	}
+
+	if err := config.SaveOverride(key, value); err != nil {
+		goutils.Err("persisting config override", "key", key, "error", err)
+	}
+	if e.OnConfigChange != nil {
+		e.OnConfigChange(key, value)
+	}
+	return nil
+}
+
+// ApplyDesiredState applies a map of config key-value pairs, returning any
+// per-key error strings. Unknown keys are skipped with a logged warning.
+func (e *Executor) ApplyDesiredState(state map[string]string) []string {
+	var errs []string
+	for key, value := range state {
+		if err := e.applyConfigKey(key, value); err != nil {
+			goutils.Err("desired_state: applying key", "key", key, "error", err)
+			errs = append(errs, fmt.Sprintf("%s: %v", key, err))
+		} else {
+			goutils.Log("desired_state: applied", "key", key, "value", value)
+		}
+	}
+	return errs
 }

@@ -15,11 +15,12 @@ import (
 // Client wraps a Paho MQTT client with auto-reconnect, heartbeat, and metrics
 // publishing. It is the transport companion to goutils.Message / goutils.Watermark.
 type Client struct {
-	client   paho.Client
-	hostname string
-	started  time.Time
-	done     chan struct{}
-	once     sync.Once
+	client     paho.Client
+	hostname   string
+	statusTopic string
+	started    time.Time
+	done       chan struct{}
+	once       sync.Once
 
 	mu        sync.RWMutex
 	connected bool
@@ -32,10 +33,11 @@ type Client struct {
 // caller can re-subscribe or publish retained config.
 func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Client, error) {
 	c := &Client{
-		hostname: shortHostname(),
-		started:  time.Now(),
-		done:     make(chan struct{}),
-		onStatus: onStatus,
+		hostname:    shortHostname(),
+		statusTopic: fmt.Sprintf("status/%s/%s", goutils.ServiceName(), shortHostname()),
+		started:     time.Now(),
+		done:        make(chan struct{}),
+		onStatus:    onStatus,
 	}
 
 	opts := paho.NewClientOptions()
@@ -46,17 +48,15 @@ func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Cl
 	opts.SetConnectRetryInterval(5 * time.Second)
 	opts.SetKeepAlive(30 * time.Second)
 
-	// LWT: offline heartbeat so the broker publishes it on ungraceful disconnect.
-	lwt := goutils.NewMessage(map[string]any{"status": "offline"}, nil, "heartbeat")
+	// LWT: broker publishes offline status if the TCP connection is lost.
+	lwt := goutils.NewMessage(map[string]any{"status": "offline"}, nil, "status")
 	lwtData, _ := json.Marshal(lwt)
-	opts.SetWill(
-		fmt.Sprintf("heartbeat/%s/%s", goutils.ServiceName(), c.hostname),
-		string(lwtData), 0, true,
-	)
+	opts.SetWill(c.statusTopic, string(lwtData), 0, true)
 
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		goutils.Log("mqtt connected", "broker", broker)
 		c.setConnected(true)
+		c.publishStatus("online")
 		if onConnect != nil {
 			onConnect(c)
 		}
@@ -132,25 +132,25 @@ func (c *Client) Done() <-chan struct{} {
 }
 
 // Stop gracefully shuts down the client. It is safe to call multiple times.
-// It closes the done channel (stopping heartbeat/metrics goroutines), publishes
-// a final offline heartbeat, and disconnects from the broker.
+// It closes the done channel (stopping metrics goroutines), publishes a
+// retained offline status, and disconnects from the broker.
 func (c *Client) Stop() {
 	c.once.Do(func() {
 		close(c.done)
-		c.publishOfflineHeartbeat()
+		c.publishStatus("offline")
 		c.client.Disconnect(1000)
 		c.setConnected(false)
 	})
 }
 
-func (c *Client) publishOfflineHeartbeat() {
-	envelope := goutils.NewMessage(map[string]any{"status": "offline"}, nil, "heartbeat")
+// publishStatus publishes a retained online/offline status message.
+func (c *Client) publishStatus(status string) {
+	envelope := goutils.NewMessage(map[string]any{"status": status}, nil, "status")
 	data, err := json.Marshal(envelope)
 	if err != nil {
 		return
 	}
-	topic := fmt.Sprintf("heartbeat/%s/%s", goutils.ServiceName(), c.hostname)
-	token := c.client.Publish(topic, 0, true, data)
+	token := c.client.Publish(c.statusTopic, 0, true, data)
 	token.Wait()
 }
 

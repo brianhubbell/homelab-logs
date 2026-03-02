@@ -12,13 +12,13 @@ import (
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
-// Client wraps a Paho MQTT client with auto-reconnect, heartbeat, and metrics
+// Client wraps a Paho MQTT client with auto-reconnect and metrics
 // publishing. It is the transport companion to goutils.Message / goutils.Watermark.
 type Client struct {
-	client     paho.Client
-	hostname   string
+	client      paho.Client
+	hostname    string
 	statusTopic string
-	started    time.Time
+	started     time.Time
 	done       chan struct{}
 	once       sync.Once
 
@@ -34,7 +34,7 @@ type Client struct {
 func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Client, error) {
 	c := &Client{
 		hostname:    shortHostname(),
-		statusTopic: fmt.Sprintf("status/%s/%s", goutils.ServiceName(), shortHostname()),
+		statusTopic: fmt.Sprintf("status/%s", shortHostname()),
 		started:     time.Now(),
 		done:        make(chan struct{}),
 		onStatus:    onStatus,

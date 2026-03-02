@@ -15,12 +15,13 @@ import (
 // Client wraps a Paho MQTT client with auto-reconnect and metrics
 // publishing. It is the transport companion to goutils.Message / goutils.Watermark.
 type Client struct {
-	client      paho.Client
-	hostname    string
-	statusTopic string
-	started     time.Time
-	done       chan struct{}
-	once       sync.Once
+	client       paho.Client
+	hostname     string
+	statusTopic  string
+	started      time.Time
+	done         chan struct{}
+	once         sync.Once
+	metricsReset chan time.Duration
 
 	mu        sync.RWMutex
 	connected bool
@@ -33,11 +34,12 @@ type Client struct {
 // caller can re-subscribe or publish retained config.
 func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Client, error) {
 	c := &Client{
-		hostname:    shortHostname(),
-		statusTopic: fmt.Sprintf("status/%s", shortHostname()),
-		started:     time.Now(),
-		done:        make(chan struct{}),
-		onStatus:    onStatus,
+		hostname:     shortHostname(),
+		statusTopic:  fmt.Sprintf("status/%s", shortHostname()),
+		started:      time.Now(),
+		done:         make(chan struct{}),
+		metricsReset: make(chan time.Duration, 1),
+		onStatus:     onStatus,
 	}
 
 	opts := paho.NewClientOptions()
@@ -134,7 +136,7 @@ func (c *Client) Done() <-chan struct{} {
 }
 
 // startStatusRefresh launches a goroutine that re-publishes the online status
-// every 60 seconds so the Redis TTL is refreshed before it expires.
+// every 60 seconds to keep the watermark timestamp current for liveness checks.
 // The goroutine exits when Stop is called.
 func (c *Client) startStatusRefresh() {
 	go func() {

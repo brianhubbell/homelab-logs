@@ -152,8 +152,14 @@ func run() {
 		}
 		goutils.Log("config updated via command", "key", key, "value", value)
 
+		// Apply runtime-adjustable settings immediately without restart.
+		if key == "metrics_interval" {
+			client.ResetMetrics(time.Duration(exec.MetricsInterval) * time.Second)
+		}
+
 		// Re-publish node config so the control plane sees the change immediately.
 		nodeConfig["auto_update_interval"] = exec.AutoUpdateInterval
+		nodeConfig["metrics_interval"] = exec.MetricsInterval
 		payload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
 		if err != nil {
 			goutils.Err("marshal updated node config after config.set", "error", err)

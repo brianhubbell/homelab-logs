@@ -86,6 +86,7 @@ func run() {
 		"label":     hostname,
 		"type":      "agent",
 		"host_type": hostType,
+		"scope":     hostType,
 		"address":   address,
 		"services":  cfg.Services,
 		"version":   Version,

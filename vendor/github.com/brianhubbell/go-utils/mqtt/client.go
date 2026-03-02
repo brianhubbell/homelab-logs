@@ -49,9 +49,10 @@ func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Cl
 	opts.SetKeepAlive(30 * time.Second)
 
 	// LWT: broker publishes offline status if the TCP connection is lost.
-	lwt := goutils.NewMessage(map[string]any{"status": "offline"}, nil, "status")
+	// QoS 1 ensures delivery even if the bridge reconnects mid-partition.
+	lwt := goutils.NewMessage(map[string]any{"status": "offline", "reason": "connection_lost"}, nil, "status")
 	lwtData, _ := json.Marshal(lwt)
-	opts.SetWill(c.statusTopic, string(lwtData), 0, true)
+	opts.SetWill(c.statusTopic, string(lwtData), 1, true)
 
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		goutils.Log("mqtt connected", "broker", broker)

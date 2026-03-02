@@ -76,6 +76,7 @@ func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Cl
 		return nil, fmt.Errorf("mqtt connect to %s: %w", broker, err)
 	}
 
+	c.startStatusRefresh()
 	return c, nil
 }
 
@@ -131,9 +132,29 @@ func (c *Client) Done() <-chan struct{} {
 	return c.done
 }
 
+// startStatusRefresh launches a goroutine that re-publishes the online status
+// every 60 seconds so the Redis TTL is refreshed before it expires.
+// The goroutine exits when Stop is called.
+func (c *Client) startStatusRefresh() {
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-c.done:
+				return
+			case <-ticker.C:
+				if c.IsConnected() {
+					c.publishStatus("online")
+				}
+			}
+		}
+	}()
+}
+
 // Stop gracefully shuts down the client. It is safe to call multiple times.
-// It closes the done channel (stopping metrics goroutines), publishes a
-// retained offline status, and disconnects from the broker.
+// It closes the done channel (stopping the status refresh and metrics goroutines),
+// publishes a retained offline status, and disconnects from the broker.
 func (c *Client) Stop() {
 	c.once.Do(func() {
 		close(c.done)

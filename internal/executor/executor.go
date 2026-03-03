@@ -1,9 +1,15 @@
 package executor
 
 import (
+	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
+	exec "os/exec"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"homelab-agent/internal/config"
 
@@ -49,6 +55,13 @@ type Executor struct {
 	// publish the MQTT response before exiting and letting the service
 	// manager restart with the new binary.
 	ShutdownCh chan string
+
+	// Log streaming
+	Publish    func(topic string, payload []byte) error
+	LogTopic   string
+	logMu      sync.Mutex
+	logCancel  context.CancelFunc
+	logGeneration int
 }
 
 // New creates an Executor.
@@ -167,6 +180,16 @@ func (e *Executor) Execute(req Request) Response {
 		resp.Status = "ok"
 		resp.Data = map[string]interface{}{"key": key, "value": value}
 
+	case "log.stream":
+		go e.streamAgentLogs()
+		resp.Status = "ok"
+		resp.Data = map[string]interface{}{"message": "log streaming started"}
+
+	case "log.stop":
+		e.stopLogStream()
+		resp.Status = "ok"
+		resp.Data = map[string]interface{}{"message": "log streaming stopped"}
+
 	default:
 		resp.Status = "error"
 		resp.Error = fmt.Sprintf("unknown action %q", req.Action)
@@ -210,6 +233,63 @@ func (e *Executor) applyConfigKey(key, value string) error {
 		e.OnConfigChange(key, value)
 	}
 	return nil
+}
+
+func (e *Executor) streamAgentLogs() {
+	e.logMu.Lock()
+	if e.logCancel != nil {
+		e.logCancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	e.logCancel = cancel
+	e.logGeneration++
+	gen := e.logGeneration
+	e.logMu.Unlock()
+
+	defer func() {
+		e.logMu.Lock()
+		if e.logGeneration == gen {
+			e.logCancel = nil
+		}
+		e.logMu.Unlock()
+		cancel()
+	}()
+
+	cmd := exec.CommandContext(ctx, "journalctl", "-u", "homelab-agent", "-f", "-n", "100", "--output=cat", "--no-pager")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		goutils.Err("log.stream: stdout pipe", "error", err)
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		goutils.Err("log.stream: start journalctl", "error", err)
+		return
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if e.Publish == nil || e.LogTopic == "" {
+			continue
+		}
+		payload, _ := json.Marshal(map[string]interface{}{
+			"line": line,
+			"ts":   time.Now().UnixMilli(),
+		})
+		if err := e.Publish(e.LogTopic, payload); err != nil {
+			goutils.Err("log.stream: publish", "error", err)
+		}
+	}
+	_ = cmd.Wait()
+}
+
+func (e *Executor) stopLogStream() {
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
+	if e.logCancel != nil {
+		e.logCancel()
+		e.logCancel = nil
+	}
 }
 
 // ApplyDesiredState applies a map of config key-value pairs, returning any

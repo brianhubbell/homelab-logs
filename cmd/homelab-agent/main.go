@@ -97,6 +97,8 @@ func run() {
 	exec.DeployDir = cfg.DeployDir
 	exec.CurrentVersion = Version
 	exec.AutoUpdateInterval = cfg.AutoUpdateInterval
+	logTopic := fmt.Sprintf("control/%s/%s/logs", cfg.TopicPrefix, hostname)
+	exec.LogTopic = logTopic
 
 	// Add service versions to node config
 	nodeConfig["serviceVersions"] = exec.ServiceVersions()
@@ -141,6 +143,9 @@ func run() {
 		log.Fatalf("MQTT: %v", err)
 	}
 	defer client.Stop()
+	exec.Publish = func(topic string, payload []byte) error {
+		return client.Publish(topic, payload)
+	}
 
 	// 8. Wire config change callback to update health info and re-publish node config
 	exec.OnConfigChange = func(key, value string) {

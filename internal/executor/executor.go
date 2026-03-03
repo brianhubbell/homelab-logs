@@ -272,6 +272,10 @@ func (e *Executor) streamAgentLogs() {
 		if e.Publish == nil || e.LogTopic == "" {
 			continue
 		}
+		// Filter noisy redis log lines
+		if strings.Contains(strings.ToLower(line), "redis") {
+			continue
+		}
 		payload, _ := json.Marshal(map[string]interface{}{
 			"line": line,
 			"ts":   time.Now().UnixMilli(),

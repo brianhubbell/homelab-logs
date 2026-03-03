@@ -100,8 +100,9 @@ func run() {
 	exec.CurrentVersion = Version
 	exec.AutoUpdateInterval = cfg.AutoUpdateInterval
 
-	// Add service versions to node config
+	// Add service versions and types to node config
 	nodeConfig["serviceVersions"] = exec.ServiceVersions()
+	nodeConfig["serviceTypes"] = exec.ClassifyServices()
 	configPayload, err := json.Marshal(goutils.NewMessage(nodeConfig, nil, "config"))
 	if err != nil {
 		log.Fatalf("marshal node config: %v", err)

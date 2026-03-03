@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+func isDockerContainer(_ string) bool { return false }
+
 func isServiceRunning(name string) bool {
 	cmd := exec.Command("launchctl", "list")
 	out, err := cmd.Output()

@@ -51,6 +51,19 @@ type Executor struct {
 	ShutdownCh chan string
 }
 
+// ClassifyServices returns a map of service name → "native" or "containerized".
+func (e *Executor) ClassifyServices() map[string]string {
+	types := make(map[string]string, len(e.Services))
+	for _, svc := range e.Services {
+		if isDockerContainer(svc) {
+			types[svc] = "containerized"
+		} else {
+			types[svc] = "native"
+		}
+	}
+	return types
+}
+
 // New creates an Executor.
 func New(services []string) *Executor {
 	return &Executor{

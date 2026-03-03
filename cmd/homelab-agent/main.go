@@ -218,7 +218,8 @@ func run() {
 		goutils.Log("desired_state subscribe deferred to onConnect", "reason", err)
 	}
 
-	// 10. Start metrics publishing via shared mqtt client
+	// 10. Start heartbeat and metrics publishing via shared mqtt client
+	client.StartHeartbeat(10 * time.Second)
 	client.StartMetrics(time.Duration(cfg.MetricsInterval)*time.Second, func(_ int64) any {
 		return met.GetSystemMetrics() // returns nil when not yet available, skipping the tick
 	})

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	osexec "os/exec"
 	"strings"
 	"syscall"
 	"time"
@@ -97,8 +99,6 @@ func run() {
 	exec.DeployDir = cfg.DeployDir
 	exec.CurrentVersion = Version
 	exec.AutoUpdateInterval = cfg.AutoUpdateInterval
-	logTopic := fmt.Sprintf("control/%s/%s/logs", cfg.TopicPrefix, hostname)
-	exec.LogTopic = logTopic
 
 	// Add service versions to node config
 	nodeConfig["serviceVersions"] = exec.ServiceVersions()
@@ -143,9 +143,41 @@ func run() {
 		log.Fatalf("MQTT: %v", err)
 	}
 	defer client.Stop()
-	exec.Publish = func(topic string, payload []byte) error {
-		return client.Publish(topic, payload)
-	}
+
+	// Continuously stream agent logs to MQTT
+	logTopic := fmt.Sprintf("control/%s/%s/logs", cfg.TopicPrefix, hostname)
+	go func() {
+		for {
+			cmd := osexec.Command("journalctl", "-u", "homelab-agent", "-f", "-n", "50", "--output=cat", "--no-pager")
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				goutils.Err("log stream: pipe", "error", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			if err := cmd.Start(); err != nil {
+				goutils.Err("log stream: start", "error", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.Contains(strings.ToLower(line), "redis") {
+					continue
+				}
+				payload, _ := json.Marshal(map[string]any{
+					"line": line,
+					"ts":   time.Now().UnixMilli(),
+				})
+				if err := client.Publish(logTopic, payload); err != nil {
+					goutils.Err("log stream: publish", "error", err)
+				}
+			}
+			_ = cmd.Wait()
+			time.Sleep(2 * time.Second)
+		}
+	}()
 
 	// 8. Wire config change callback to update health info and re-publish node config
 	exec.OnConfigChange = func(key, value string) {

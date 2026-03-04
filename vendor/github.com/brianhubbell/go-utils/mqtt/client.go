@@ -12,16 +12,15 @@ import (
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
-// Client wraps a Paho MQTT client with auto-reconnect and metrics
+// Client wraps a Paho MQTT client with auto-reconnect, heartbeat, and metrics
 // publishing. It is the transport companion to goutils.Message / goutils.Watermark.
 type Client struct {
-	client       paho.Client
-	hostname     string
-	statusTopic  string
-	started      time.Time
-	done         chan struct{}
-	once         sync.Once
-	metricsReset chan time.Duration
+	client     paho.Client
+	hostname   string
+	statusTopic string
+	started    time.Time
+	done       chan struct{}
+	once       sync.Once
 
 	mu        sync.RWMutex
 	connected bool
@@ -34,12 +33,11 @@ type Client struct {
 // caller can re-subscribe or publish retained config.
 func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Client, error) {
 	c := &Client{
-		hostname:     shortHostname(),
-		statusTopic:  fmt.Sprintf("status/%s", shortHostname()),
-		started:      time.Now(),
-		done:         make(chan struct{}),
-		metricsReset: make(chan time.Duration, 1),
-		onStatus:     onStatus,
+		hostname:    shortHostname(),
+		statusTopic: fmt.Sprintf("status/%s/%s", goutils.ServiceName(), shortHostname()),
+		started:     time.Now(),
+		done:        make(chan struct{}),
+		onStatus:    onStatus,
 	}
 
 	opts := paho.NewClientOptions()
@@ -51,10 +49,9 @@ func NewClient(broker string, onStatus func(bool), onConnect func(*Client)) (*Cl
 	opts.SetKeepAlive(30 * time.Second)
 
 	// LWT: broker publishes offline status if the TCP connection is lost.
-	// QoS 1 ensures delivery even if the bridge reconnects mid-partition.
-	lwt := goutils.NewMessage(map[string]any{"status": "offline", "reason": "connection_lost"}, nil, "status")
+	lwt := goutils.NewMessage(map[string]any{"status": "offline"}, nil, "status")
 	lwtData, _ := json.Marshal(lwt)
-	opts.SetWill(c.statusTopic, string(lwtData), 1, true)
+	opts.SetWill(c.statusTopic, string(lwtData), 0, true)
 
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		goutils.Log("mqtt connected", "broker", broker)
@@ -135,8 +132,8 @@ func (c *Client) Done() <-chan struct{} {
 }
 
 // Stop gracefully shuts down the client. It is safe to call multiple times.
-// It closes the done channel, publishes a retained offline status, and disconnects
-// from the broker.
+// It closes the done channel (stopping metrics goroutines), publishes a
+// retained offline status, and disconnects from the broker.
 func (c *Client) Stop() {
 	c.once.Do(func() {
 		close(c.done)

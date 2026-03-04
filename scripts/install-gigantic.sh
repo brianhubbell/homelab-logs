@@ -4,57 +4,45 @@ set -euo pipefail
 # Run on gigantic as: sudo bash install-gigantic.sh
 
 DEPLOY_DIR="/opt/homelab-services"
-REPO_DIR="${DEPLOY_DIR}/homelab-agent"
-BINARY="${REPO_DIR}/build/bin/homelab-agent"
+REPO_DIR="${DEPLOY_DIR}/homelab-logs"
+BINARY="${REPO_DIR}/build/bin/homelab-logs"
 
 # 1. Create dedicated user
-if ! id homelab-agent &>/dev/null; then
-    useradd -r -s /usr/sbin/nologin homelab-agent
-    echo "created homelab-agent user"
+if ! id homelab-logs &>/dev/null; then
+    useradd -r -s /usr/sbin/nologin homelab-logs
+    echo "created homelab-logs user"
 fi
 
-# 2. Add to docker group
-usermod -aG docker homelab-agent
-
-# 3. Create deploy dir owned by homelab-agent user
+# 2. Create deploy dir owned by homelab-logs user
 mkdir -p "${DEPLOY_DIR}"
-chown homelab-agent:homelab-agent "${DEPLOY_DIR}"
+chown homelab-logs:homelab-logs "${DEPLOY_DIR}"
 
-# 4. Clone repo as homelab-agent user (or pull if exists)
+# 3. Clone repo as homelab-logs user (or pull if exists)
 if [ -d "${REPO_DIR}/.git" ]; then
-    sudo -u homelab-agent git -C "${REPO_DIR}" pull
+    sudo -u homelab-logs git -C "${REPO_DIR}" pull
 else
-    sudo -u homelab-agent git clone https://github.com/brianhubbell/homelab-agent.git "${REPO_DIR}"
+    sudo -u homelab-logs git clone https://github.com/brianhubbell/homelab-logs.git "${REPO_DIR}"
 fi
 
-# 5. Build binary in-place
-sudo -u homelab-agent bash -c "cd ${REPO_DIR} && CGO_ENABLED=0 go build -ldflags \"-X main.Version=\$(git describe --always)\" -o build/bin/homelab-agent ./cmd/homelab-agent/"
+# 4. Build binary in-place
+sudo -u homelab-logs bash -c "cd ${REPO_DIR} && CGO_ENABLED=0 go build -ldflags \"-X main.Version=\$(git describe --always)\" -o build/bin/homelab-logs ./cmd/homelab-logs/"
 echo "built binary at ${BINARY}"
 
-# 6. Create env file
-mkdir -p /etc/homelab-agent
-cat > /etc/homelab-agent/env <<'EOF'
+# 5. Create env file
+mkdir -p /etc/homelab-logs
+cat > /etc/homelab-logs/env <<'EOF'
 MQTT_BROKER=gigantic.lan
 TOPIC_PREFIX=agent
-SERVICES=govee-to-mqtt,bt-to-mqtt,wifi-to-mqtt
-DEPLOY_DIR=/opt/homelab-services
-METRICS_INTERVAL_SECONDS=60
+JOURNAL_UNIT=homelab-logs
 DEBUG=false
 EOF
-echo "wrote /etc/homelab-agent/env"
+echo "wrote /etc/homelab-logs/env"
 
-# 7. Scoped sudoers for systemctl (managing OTHER services only)
-cat > /etc/sudoers.d/homelab-agent <<'EOF'
-homelab-agent ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *
-EOF
-chmod 440 /etc/sudoers.d/homelab-agent
-echo "wrote sudoers.d/homelab-agent"
-
-# 8. Install and start service
-cp "${REPO_DIR}/scripts/homelab-agent.service" /etc/systemd/system/homelab-agent.service
+# 6. Install and start service
+cp "${REPO_DIR}/scripts/homelab-logs.service" /etc/systemd/system/homelab-logs.service
 systemctl daemon-reload
-systemctl enable homelab-agent
-systemctl start homelab-agent
+systemctl enable homelab-logs
+systemctl start homelab-logs
 echo "service started"
 
-systemctl status homelab-agent --no-pager
+systemctl status homelab-logs --no-pager

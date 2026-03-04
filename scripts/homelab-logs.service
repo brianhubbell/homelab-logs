@@ -1,0 +1,19 @@
+[Unit]
+Description=Homelab Logs - MQTT log-streaming sidecar
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homelab-logs
+Group=homelab-logs
+WorkingDirectory=/opt/homelab-services/homelab-logs
+ExecStart=/opt/homelab-services/homelab-logs/build/bin/homelab-logs
+EnvironmentFile=/etc/homelab-logs/env
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

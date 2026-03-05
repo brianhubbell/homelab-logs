@@ -59,10 +59,7 @@ func main() {
 	}
 	defer client.Stop()
 
-	// 4. Start heartbeat
-	client.StartHeartbeat(10 * time.Second)
-
-	// 5. Build log topic
+	// 4. Build log topic
 	logTopic := fmt.Sprintf("control/%s/%s/logs", cfg.TopicPrefix, hostname)
 
 	// publish helper

@@ -9,10 +9,12 @@ import (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	MQTTBroker  string
-	TopicPrefix string
-	Debug       bool
-	JournalUnit string
+	MQTTBroker      string
+	TopicPrefix     string
+	Debug           bool
+	JournalUnit     string
+	LogSource       string
+	DockerContainer string
 }
 
 // Load reads configuration from environment variables.
@@ -23,10 +25,12 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		MQTTBroker:  broker,
-		TopicPrefix: envOrDefault("TOPIC_PREFIX", "agent"),
-		Debug:       goutils.StrToBool(os.Getenv("DEBUG")),
-		JournalUnit: envOrDefault("JOURNAL_UNIT", "homelab-logs"),
+		MQTTBroker:      broker,
+		TopicPrefix:     envOrDefault("TOPIC_PREFIX", "agent"),
+		Debug:           goutils.StrToBool(os.Getenv("DEBUG")),
+		JournalUnit:     envOrDefault("JOURNAL_UNIT", "homelab-logs"),
+		LogSource:       envOrDefault("LOG_SOURCE", "journal"),
+		DockerContainer: os.Getenv("DOCKER_CONTAINER"),
 	}
 
 	return cfg, nil
